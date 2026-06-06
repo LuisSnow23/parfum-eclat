@@ -70,7 +70,52 @@ db.exec(`
 
 const upload = multer({ dest: 'uploads/' });
 
-// ── INVERSIONES ──────────────────────────────────────────────────────────────
+// ============================================
+// RUTAS DE BIENVENIDA Y HEALTH CHECK
+// ============================================
+
+app.get('/', (req, res) => {
+  res.json({
+    mensaje: 'Parfum Eclat API',
+    version: '1.0.0',
+    estado: 'activo',
+    endpoints_disponibles: {
+      dashboard: '/api/dashboard',
+      inversiones: '/api/inversiones',
+      inversiones_id: '/api/inversiones/:id',
+      pendientes: '/api/pendientes',
+      ahorro_config: '/api/ahorro/config',
+      ahorro_movimientos: '/api/ahorro/movimientos',
+      importar: '/api/importar',
+      health: '/health'
+    },
+    documentacion: 'https://github.com/LuisSnow23/parfum-eclat'
+  });
+});
+
+app.get('/health', (req, res) => {
+  try {
+    // Verificar que la base de datos está funcionando
+    db.prepare('SELECT 1').get();
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      database: 'connected',
+      uptime: process.uptime()
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      database: 'disconnected',
+      error: error.message
+    });
+  }
+});
+
+// ============================================
+// INVERSIONES
+// ============================================
 
 app.get('/api/inversiones', (req, res) => {
   const inversiones = db.prepare(`
@@ -148,7 +193,9 @@ app.delete('/api/inversiones/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── PERFUMES ─────────────────────────────────────────────────────────────────
+// ============================================
+// PERFUMES
+// ============================================
 
 app.post('/api/perfumes', (req, res) => {
   const { inversion_id, nombre, precio_mayoreo, costo_envio, precio_publico, piezas_compradas, notas } = req.body;
@@ -173,7 +220,9 @@ app.delete('/api/perfumes/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── VENTAS ────────────────────────────────────────────────────────────────────
+// ============================================
+// VENTAS
+// ============================================
 
 app.post('/api/ventas', (req, res) => {
   const { perfume_id, inversion_id, cliente, cantidad, precio_venta, fecha, pagado, notas } = req.body;
@@ -189,7 +238,9 @@ app.delete('/api/ventas/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── PENDIENTES ────────────────────────────────────────────────────────────────
+// ============================================
+// PENDIENTES
+// ============================================
 
 app.get('/api/pendientes', (req, res) => {
   const rows = db.prepare('SELECT * FROM pendientes WHERE resuelto = 0 ORDER BY fecha DESC').all();
@@ -215,7 +266,9 @@ app.delete('/api/pendientes/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── DASHBOARD ─────────────────────────────────────────────────────────────────
+// ============================================
+// DASHBOARD
+// ============================================
 
 app.get('/api/dashboard', (req, res) => {
   const totalInversiones = db.prepare('SELECT COUNT(*) as c FROM inversiones').get().c;
@@ -242,7 +295,9 @@ app.get('/api/dashboard', (req, res) => {
   });
 });
 
-// ── IMPORT EXCEL ──────────────────────────────────────────────────────────────
+// ============================================
+// IMPORT EXCEL (deshabilitado)
+// ============================================
 
 app.post('/api/importar', (req, res) => {
   return res.status(501).json({
@@ -250,7 +305,10 @@ app.post('/api/importar', (req, res) => {
     error: 'Importación de Excel deshabilitada temporalmente'
   });
 });
-// ── AHORRO ────────────────────────────────────────────────────────────────────
+
+// ============================================
+// AHORRO
+// ============================================
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS ahorro_config (
@@ -303,6 +361,13 @@ app.delete('/api/ahorro/movimientos/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ============================================
+// INICIAR SERVIDOR
+// ============================================
+
 app.listen(PORT, () => {
   console.log(`✅ Parfum Eclat API corriendo en puerto ${PORT}`);
+  console.log(`📊 Dashboard disponible en: http://localhost:${PORT}/api/dashboard`);
+  console.log(`🏠 Inicio: http://localhost:${PORT}`);
+  console.log(`❤️ Health check: http://localhost:${PORT}/health`);
 });
