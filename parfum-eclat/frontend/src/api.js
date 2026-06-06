@@ -1,7 +1,6 @@
-// frontend/src/api.js
-const BASE = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api`  // Producción (Render)
-  : '/api'  // Desarrollo local (usará el proxy de Vite)
+const BASE = 'https://parfum-eclat-backend.onrender.com/api'
+
+console.log('🔍 API Base URL:', BASE);
 
 export const api = {
   get: (url) => fetch(BASE + url).then(r => r.json()),
