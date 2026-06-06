@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const Database = require('better-sqlite3');
 const multer = require('multer');
-const XLSX = require('xlsx');
+//const XLSX = require('xlsx');
 const path = require('path');
 const fs = require('fs');
 
@@ -244,117 +244,12 @@ app.get('/api/dashboard', (req, res) => {
 
 // ── IMPORT EXCEL ──────────────────────────────────────────────────────────────
 
-app.post('/api/importar', upload.single('archivo'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No se recibió archivo' });
-
-  try {
-    const wb = XLSX.readFile(req.file.path);
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-
-    // Parse the existing Excel format and create an inversión
-    const hoy = new Date().toISOString().split('T')[0];
-    const invResult = db.prepare(`
-      INSERT INTO inversiones (nombre, fecha, inversion_total, aporte_yo, aporte_socio, meta_ganancia, notas)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run('Importado desde Excel', hoy, 6000, 3000, 3000, 0, 'Datos importados del archivo original');
-
-    const invId = invResult.lastInsertRowid;
-
-    // Parse perfumes from the Excel (rows that have precio info)
-    let perfumesImportados = 0;
-    let pendientesImportados = 0;
-
-    for (let i = 0; i < data.length; i++) {
-      const row = data[i];
-      const rowStr = row.join(' ').toLowerCase();
-
-      // Look for perfume price patterns
-      if (rowStr.includes('precio de proveedor') || rowStr.includes('precio venta')) {
-        // Try to find perfume block
-        const precioMayoreo = parseFloat(String(row[0] || row[1] || row[2] || '').replace(/[^0-9.]/g, '')) || 0;
-        if (precioMayoreo > 0) {
-          db.prepare(`
-            INSERT INTO perfumes (inversion_id, nombre, precio_mayoreo, costo_envio, precio_publico, piezas_compradas)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `).run(invId, 'Perfume importado', precioMayoreo, 51, precioMayoreo * 1.4, 1);
-          perfumesImportados++;
-        }
-      }
-
-      // Look for pendientes (cobrar/pagar)
-      const fullRow = row.join(' ');
-      const pendientesPatterns = [
-        { pattern: /TIA DE ARUMI.*?(\d+)/i, tipo: 'cobrar', desc: 'Tía de Arumi' },
-        { pattern: /MAURI.*?(\d+)/i, tipo: 'cobrar', desc: 'Mauri (Pour Extrador)' },
-        { pattern: /JOSE GUADALUPE.*?(\d+)/i, tipo: 'pagar', desc: 'José Guadalupe' },
-      ];
-
-      for (const p of pendientesPatterns) {
-        const match = fullRow.match(p.pattern);
-        if (match) {
-          const monto = parseFloat(match[1]) || 0;
-          if (monto > 0) {
-            // Check if already inserted this one
-            const exists = db.prepare('SELECT id FROM pendientes WHERE descripcion = ?').get(p.desc);
-            if (!exists) {
-              db.prepare(`
-                INSERT INTO pendientes (tipo, descripcion, monto, persona, inversion_id, fecha)
-                VALUES (?, ?, ?, ?, ?, ?)
-              `).run(p.tipo, p.desc, monto, p.desc, invId, hoy);
-              pendientesImportados++;
-            }
-          }
-        }
-      }
-    }
-
-    // Add Vulcan Feu and Odyssey as perfumes from the known data
-    const perfumesConocidos = [
-      { nombre: 'Vulcan Feu', precio_mayoreo: 950, precio_publico: 1350, piezas: 2 },
-      { nombre: 'Odyssey', precio_mayoreo: 740, precio_publico: 1000, piezas: 1 },
-    ];
-
-    for (const p of perfumesConocidos) {
-      const exists = db.prepare('SELECT id FROM perfumes WHERE nombre = ? AND inversion_id = ?').get(p.nombre, invId);
-      if (!exists) {
-        db.prepare(`
-          INSERT INTO perfumes (inversion_id, nombre, precio_mayoreo, costo_envio, precio_publico, piezas_compradas)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `).run(invId, p.nombre, p.precio_mayoreo, 51, p.precio_publico, p.piezas);
-        perfumesImportados++;
-      }
-    }
-
-    // Add known pendientes
-    const pendientesConocidos = [
-      { tipo: 'cobrar', desc: 'Tía de Arumi', monto: 120, persona: 'Tía de Arumi' },
-      { tipo: 'cobrar', desc: 'Mauri (Pour Extrador)', monto: 600, persona: 'Mauri' },
-      { tipo: 'pagar', desc: 'José Guadalupe (socio)', monto: 503, persona: 'José Guadalupe' },
-    ];
-
-    for (const p of pendientesConocidos) {
-      const exists = db.prepare('SELECT id FROM pendientes WHERE descripcion = ?').get(p.desc);
-      if (!exists) {
-        db.prepare(`INSERT INTO pendientes (tipo, descripcion, monto, persona, inversion_id, fecha) VALUES (?, ?, ?, ?, ?, ?)`)
-          .run(p.tipo, p.desc, p.monto, p.persona, invId, hoy);
-        pendientesImportados++;
-      }
-    }
-
-    fs.unlinkSync(req.file.path);
-    res.json({
-      ok: true,
-      inversion_id: invId,
-      perfumes_importados: perfumesImportados,
-      pendientes_importados: pendientesImportados
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
+app.post('/api/importar', (req, res) => {
+  return res.status(501).json({
+    ok: false,
+    error: 'Importación de Excel deshabilitada temporalmente'
+  });
 });
-
 // ── AHORRO ────────────────────────────────────────────────────────────────────
 
 db.exec(`
