@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
@@ -408,4 +408,6 @@ app.delete('/api/ahorro/movimientos/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-app.listen(PORT, () => console.log(`✅ Parfum Eclat API corriendo en http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`✅ Parfum Eclat API corriendo en puerto ${PORT}`);
+});
