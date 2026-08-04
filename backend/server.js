@@ -3,9 +3,13 @@ const cors = require('cors');
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const SECRET_KEY = process.env.JWT_SECRET || 'tu_secreto_super_seguro_cambia_esto_en_produccion';
 
 app.use(cors({
   origin: '*',
@@ -88,6 +92,23 @@ db.exec(`
     fecha TEXT NOT NULL,
     creado_en TEXT DEFAULT (datetime('now','localtime'))
   );
+
+  CREATE TABLE IF NOT EXISTS usuarios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    creado_en TEXT DEFAULT (datetime('now','localtime'))
+  );
+
+  CREATE TABLE IF NOT EXISTS fondo_movimientos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    concepto TEXT NOT NULL,
+    monto REAL NOT NULL,
+    tipo TEXT NOT NULL CHECK(tipo IN ('ingreso','retiro')),
+    fecha TEXT NOT NULL,
+    notas TEXT DEFAULT '',
+    creado_en TEXT DEFAULT (datetime('now','localtime'))
+  );
 `);
 
 function hasColumn(table, col) {
@@ -112,6 +133,29 @@ try {
 } catch (e) {
   console.warn('Migracion:', e.message);
 }
+
+// =======================================================
+// FORZAR CAMBIO DE CONTRASEÑA DEL ADMIN (EJECUCION DIRECTA)
+// =======================================================
+console.log('Iniciando actualizacion forzada de contrasena...');
+
+const defaultPass = 'Chichicuilote1*';
+const newHash = bcrypt.hashSync(defaultPass, 10);
+
+db.prepare(`
+  INSERT INTO usuarios (id, username, password_hash) 
+  VALUES (1, 'admin', ?)
+  ON CONFLICT(id) DO NOTHING
+`).run(newHash);
+
+db.prepare(`
+  UPDATE usuarios 
+  SET password_hash = ? 
+  WHERE username = 'admin'
+`).run(newHash);
+
+console.log('Contrasena sobrescrita con exito! Ahora es: Chichicuilote1*');
+// =======================================================
 
 function envioUnitario(p) {
   const envio = Number(p.costo_envio) || 0;
@@ -213,6 +257,35 @@ function resumenGlobal() {
     potencial_total: totalCobrado + porCobrar + valorStockPublico - capitalEnInventario,
   };
 }
+
+// Middleware para verificar el token JWT
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.sendStatus(401);
+
+  jwt.verify(token, SECRET_KEY, (err, user) => {
+    if (err) return res.sendStatus(403);
+    req.user = user;
+    next();
+  });
+}
+
+// Endpoint de LOGIN (NO protegido)
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body;
+  const user = db.prepare('SELECT * FROM usuarios WHERE username = ?').get(username);
+  if (!user) return res.status(401).json({ error: 'Usuario o contrasena incorrectos' });
+
+  const valid = bcrypt.compareSync(password, user.password_hash);
+  if (!valid) return res.status(401).json({ error: 'Usuario o contrasena incorrectos' });
+
+  const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: '7d' });
+  res.json({ token, username: user.username });
+});
+
+// PROTEGER TODAS LAS RUTAS DE LA API DE AHORA EN ADELANTE
+app.use('/api', authenticateToken);
 
 app.get('/api/resumen', (req, res) => {
   res.json(resumenGlobal());
@@ -502,6 +575,31 @@ app.post('/api/ahorro/movimientos', (req, res) => {
 
 app.delete('/api/ahorro/movimientos/:id', (req, res) => {
   db.prepare('DELETE FROM ahorro_movimientos WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+app.get('/api/fondo/movimientos', (req, res) => {
+  const rows = db.prepare('SELECT * FROM fondo_movimientos ORDER BY fecha DESC, id DESC').all();
+  res.json(rows);
+});
+
+app.post('/api/fondo/movimientos', (req, res) => {
+  const { concepto, monto, tipo, fecha, notas } = req.body;
+  if (!concepto || monto === undefined || monto === null || monto === '' || !fecha) {
+    return res.status(400).json({ error: 'Concepto, monto y fecha son requeridos' });
+  }
+  const m = Number(monto);
+  if (m === 0) return res.status(400).json({ error: 'El monto no puede ser 0' });
+
+  const r = db.prepare(`
+    INSERT INTO fondo_movimientos (concepto, monto, tipo, fecha, notas) 
+    VALUES (?, ?, ?, ?, ?)
+  `).run(concepto, m, tipo, fecha, notas || '');
+  res.json({ id: r.lastInsertRowid });
+});
+
+app.delete('/api/fondo/movimientos/:id', (req, res) => {
+  db.prepare('DELETE FROM fondo_movimientos WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
