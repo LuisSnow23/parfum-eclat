@@ -2,7 +2,7 @@
   "name": "parfum-eclat",
   "version": "1.0.0",
   "scripts": {
-    "build": "npm install --prefix backend && npm install --prefix frontend && npm run build --prefix frontend",
+    "build": "npm install --prefix backend && cd backend && npm rebuild better-sqlite3 && cd .. && npm install --prefix frontend && npm run build --prefix frontend",
     "start": "node backend/server.js"
   },
   "engines": {
