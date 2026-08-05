@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Trash2, PiggyBank, Target, TrendingUp, Calendar } from 'lucide-react'
+import { Plus, X, Trash2, PiggyBank, Target, TrendingUp, Calendar, Pencil } from 'lucide-react'
 import { api, fmt, fmtDate } from '../api'
 
 const hoy = new Date().toISOString().split('T')[0]
 
 function diasHastaDict() {
   const ahora = new Date()
-  const dic = new Date(ahora.getFullYear(), 11, 31) // 31 dic
+  const dic = new Date(ahora.getFullYear(), 11, 31)
   const diff = dic - ahora
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)))
 }
@@ -22,6 +22,8 @@ export default function Ahorro() {
   const [showMovimiento, setShowMovimiento] = useState(false)
   const [configForm, setConfigForm] = useState({ meta: '', descripcion: '' })
   const [movForm, setMovForm] = useState({ tipo: 'deposito', monto: '', descripcion: '', fecha: hoy })
+  const [editMovId, setEditMovId] = useState(null)
+  const [editMovForm, setEditMovForm] = useState({ tipo: 'deposito', monto: '', descripcion: '', fecha: hoy })
 
   const load = async () => {
     try {
@@ -43,12 +45,24 @@ export default function Ahorro() {
 
   const sc = (k, v) => setConfigForm(f => ({ ...f, [k]: v }))
   const sm = (k, v) => setMovForm(f => ({ ...f, [k]: v }))
+  const sem = (k, v) => setEditMovForm(f => ({ ...f, [k]: v }))
 
   const guardarConfig = async () => {
     if (!configForm.meta) return
     await api.post('/ahorro/config', configForm)
     await load()
     setShowConfig(false)
+  }
+
+  const openEditMovimiento = (m) => {
+    setEditMovId(m.id)
+    setEditMovForm({
+      tipo: m.tipo || 'deposito',
+      monto: m.monto ?? '',
+      descripcion: m.descripcion || '',
+      fecha: m.fecha || hoy,
+    })
+    setShowMovimiento(true)
   }
 
   const agregarMovimiento = async () => {
@@ -59,8 +73,17 @@ export default function Ahorro() {
     setMovForm({ tipo: 'deposito', monto: '', descripcion: '', fecha: hoy })
   }
 
+  const editarMovimiento = async () => {
+    if (!editMovForm.monto) return
+    await api.put(`/ahorro/movimientos/${editMovId}`, editMovForm)
+    await load()
+    setShowMovimiento(false)
+    setEditMovId(null)
+    setEditMovForm({ tipo: 'deposito', monto: '', descripcion: '', fecha: hoy })
+  }
+
   const eliminarMov = async (id) => {
-    if (!confirm('¿Eliminar este movimiento?')) return
+    if (!confirm('Eliminar este movimiento?')) return
     await api.delete(`/ahorro/movimientos/${id}`)
     load()
   }
@@ -84,17 +107,17 @@ export default function Ahorro() {
     <div>
       <div className="page-header">
         <div>
-          <div className="ornament">✦ ✦ ✦</div>
+          <div className="ornament">* * *</div>
           <h1 className="page-title" style={{ marginTop: 8 }}>
             Ahorro <span>Diciembre</span>
           </h1>
-          <div className="label" style={{ marginTop: 6 }}>Seguimiento de tu meta de ahorro · {dias} días restantes</div>
+          <div className="label" style={{ marginTop: 6 }}>Seguimiento de tu meta de ahorro  {dias} dias restantes</div>
         </div>
         <div className="flex gap-2">
           <button className="btn btn-outline" onClick={() => setShowConfig(true)}>
             <Target size={13} /> {config ? 'Editar Meta' : 'Establecer Meta'}
           </button>
-          <button className="btn btn-gold" onClick={() => setShowMovimiento(true)}>
+          <button className="btn btn-gold" onClick={() => { setEditMovId(null); setMovForm({ tipo: 'deposito', monto: '', descripcion: '', fecha: hoy }); setShowMovimiento(true) }}>
             <Plus size={14} /> Registrar Movimiento
           </button>
         </div>
@@ -103,9 +126,9 @@ export default function Ahorro() {
       {!config ? (
         <div className="card">
           <div className="empty-state">
-            <div style={{ fontSize: '2.5rem', marginBottom: 14 }}>🐷</div>
+            <div style={{ fontSize: '2.5rem', marginBottom: 14 }}>P</div>
             <div className="section-title">Establece tu meta de ahorro</div>
-            <p>Define cuánto quieres ahorrar antes de que termine el año.</p>
+            <p>Define cuanto quieres ahorrar antes de que termine el ano.</p>
             <button className="btn btn-gold" style={{ marginTop: 16 }} onClick={() => setShowConfig(true)}>
               <Target size={14} /> Establecer Meta
             </button>
@@ -113,7 +136,6 @@ export default function Ahorro() {
         </div>
       ) : (
         <>
-          {/* Tarjeta principal de progreso */}
           <div className="card card-gold" style={{ marginBottom: 24, padding: '28px 32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
               <div>
@@ -142,20 +164,19 @@ export default function Ahorro() {
 
             {falta > 0 ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-                <MiniInfo icon={<Calendar size={13} />} label="Días restantes" value={`${dias} días`} />
+                <MiniInfo icon={<Calendar size={13} />} label="Dias restantes" value={`${dias} dias`} />
                 <MiniInfo icon={<TrendingUp size={13} />} label="Ahorra por semana" value={fmt(porSemana)} highlight />
                 <MiniInfo icon={<PiggyBank size={13} />} label="Falta para la meta" value={fmt(falta)} />
               </div>
             ) : (
               <div style={{ textAlign: 'center', padding: '8px 0' }}>
                 <span className="badge badge-green" style={{ fontSize: '0.85rem', padding: '6px 18px' }}>
-                  🎉 ¡Meta alcanzada!
+                  Meta alcanzada!
                 </span>
               </div>
             )}
           </div>
 
-          {/* Stats pequeñas */}
           <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 28 }}>
             <div className="stat-card">
               <div className="label">Total depositado</div>
@@ -166,16 +187,15 @@ export default function Ahorro() {
               <div className="stat-value red">{fmt(totalRetirado)}</div>
             </div>
             <div className="stat-card">
-              <div className="label">Ahorro por día (para meta)</div>
+              <div className="label">Ahorro por dia (para meta)</div>
               <div className="stat-value gold">{fmt(porDia)}</div>
             </div>
           </div>
 
-          {/* Movimientos */}
           <div>
             <div className="flex-between" style={{ marginBottom: 14 }}>
               <span className="section-title">Movimientos</span>
-              <button className="btn btn-outline btn-sm" onClick={() => setShowMovimiento(true)}>
+              <button className="btn btn-outline btn-sm" onClick={() => { setEditMovId(null); setMovForm({ tipo: 'deposito', monto: '', descripcion: '', fecha: hoy }); setShowMovimiento(true) }}>
                 <Plus size={12} /> Agregar
               </button>
             </div>
@@ -183,7 +203,7 @@ export default function Ahorro() {
             {movimientos.length === 0 ? (
               <div className="card">
                 <div className="empty-state">
-                  <p>Sin movimientos. ¡Empieza a registrar tus ahorros!</p>
+                  <p>Sin movimientos. Empieza a registrar tus ahorros!</p>
                 </div>
               </div>
             ) : (
@@ -193,7 +213,7 @@ export default function Ahorro() {
                     <tr>
                       <th>Fecha</th>
                       <th>Tipo</th>
-                      <th>Descripción</th>
+                      <th>Descripcion</th>
                       <th>Monto</th>
                       <th>Saldo acumulado</th>
                       <th></th>
@@ -201,7 +221,6 @@ export default function Ahorro() {
                   </thead>
                   <tbody>
                     {movimientos.map((m, i) => {
-                      // Calcular saldo acumulado hasta este movimiento (de más antiguo a más nuevo)
                       const ordenados = [...movimientos].reverse()
                       const idx = ordenados.findIndex(x => x.id === m.id)
                       const saldoAcum = ordenados.slice(0, idx + 1).reduce((s, x) => s + (x.tipo === 'deposito' ? x.monto : -x.monto), 0)
@@ -210,16 +229,19 @@ export default function Ahorro() {
                           <td className="td-muted">{fmtDate(m.fecha)}</td>
                           <td>
                             <span className={`badge ${m.tipo === 'deposito' ? 'badge-green' : 'badge-red'}`}>
-                              {m.tipo === 'deposito' ? '↓ Depósito' : '↑ Retiro'}
+                              {m.tipo === 'deposito' ? 'Deposito' : 'Retiro'}
                             </span>
                           </td>
-                          <td style={{ color: 'var(--cream)' }}>{m.descripcion || '—'}</td>
+                          <td style={{ color: 'var(--cream)' }}>{m.descripcion || '-'}</td>
                           <td className={m.tipo === 'deposito' ? 'td-green' : 'td-red'}>
                             {m.tipo === 'deposito' ? '+' : '-'}{fmt(m.monto)}
                           </td>
                           <td className="td-gold">{fmt(saldoAcum)}</td>
-                          <td>
-                            <button className="btn btn-danger btn-sm" onClick={() => eliminarMov(m.id)}>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            <button className="btn-icon" title="Editar" onClick={() => openEditMovimiento(m)}>
+                              <Pencil size={14} />
+                            </button>
+                            <button className="btn-icon" title="Eliminar" onClick={() => eliminarMov(m.id)}>
                               <Trash2 size={12} />
                             </button>
                           </td>
@@ -234,7 +256,6 @@ export default function Ahorro() {
         </>
       )}
 
-      {/* Modal config */}
       {showConfig && (
         <div className="modal-overlay" onClick={() => setShowConfig(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -244,7 +265,7 @@ export default function Ahorro() {
             </div>
             <div className="modal-body">
               <div className="form-group">
-                <label className="form-label">¿Cuánto quieres ahorrar antes del 31 de diciembre? ($)</label>
+                <label className="form-label">Cuanto quieres ahorrar antes del 31 de diciembre? ($)</label>
                 <input
                   type="number"
                   className="form-input"
@@ -255,17 +276,17 @@ export default function Ahorro() {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">¿Para qué es este ahorro? (opcional)</label>
+                <label className="form-label">Para que es este ahorro? (opcional)</label>
                 <input
                   className="form-input"
-                  placeholder="Ej: Reinversión de perfumes, viaje, etc."
+                  placeholder="Ej: Reinversion de perfumes, viaje, etc."
                   value={configForm.descripcion}
                   onChange={e => sc('descripcion', e.target.value)}
                 />
               </div>
               {configForm.meta > 0 && (
                 <div className="alert alert-info">
-                  Para lograrlo necesitas ahorrar aprox. <strong>{fmt(Math.ceil(configForm.meta / semanasHastaDict()))}/semana</strong> o <strong>{fmt(Math.ceil(configForm.meta / diasHastaDict()))}/día</strong> los próximos {dias} días.
+                  Para lograrlo necesitas ahorrar aprox. <strong>{fmt(Math.ceil(configForm.meta / semanasHastaDict()))}/semana</strong> o <strong>{fmt(Math.ceil(configForm.meta / diasHastaDict()))}/dia</strong> los proximos {dias} dias.
                 </div>
               )}
             </div>
@@ -277,20 +298,31 @@ export default function Ahorro() {
         </div>
       )}
 
-      {/* Modal movimiento */}
       {showMovimiento && (
-        <div className="modal-overlay" onClick={() => setShowMovimiento(false)}>
+        <div className="modal-overlay" onClick={() => { setShowMovimiento(false); setEditMovId(null) }}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <div className="modal-title">Registrar Movimiento</div>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowMovimiento(false)}><X size={16} /></button>
+              <div className="modal-title">
+                {editMovId ? 'Editar Movimiento' : 'Registrar Movimiento'}
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setShowMovimiento(false); setEditMovId(null) }}><X size={16} /></button>
             </div>
             <div className="modal-body">
               <div className="form-group">
                 <label className="form-label">Tipo</label>
-                <select className="form-input" value={movForm.tipo} onChange={e => sm('tipo', e.target.value)}>
-                  <option value="deposito">Depósito (ahorré este dinero)</option>
-                  <option value="retiro">Retiro (saqué este dinero)</option>
+                <select 
+                  className="form-input" 
+                  value={editMovId ? editMovForm.tipo : movForm.tipo} 
+                  onChange={e => {
+                    if (editMovId) {
+                      sem('tipo', e.target.value)
+                    } else {
+                      sm('tipo', e.target.value)
+                    }
+                  }}
+                >
+                  <option value="deposito">Deposito (ahorre este dinero)</option>
+                  <option value="retiro">Retiro (saque este dinero)</option>
                 </select>
               </div>
               <div className="form-grid-2">
@@ -300,29 +332,54 @@ export default function Ahorro() {
                     type="number"
                     className="form-input"
                     placeholder="0"
-                    value={movForm.monto}
-                    onChange={e => sm('monto', parseFloat(e.target.value) || '')}
+                    value={editMovId ? editMovForm.monto : movForm.monto}
+                    onChange={e => {
+                      if (editMovId) {
+                        sem('monto', parseFloat(e.target.value) || '')
+                      } else {
+                        sm('monto', parseFloat(e.target.value) || '')
+                      }
+                    }}
                     autoFocus
                   />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Fecha</label>
-                  <input type="date" className="form-input" value={movForm.fecha} onChange={e => sm('fecha', e.target.value)} />
+                  <input 
+                    type="date" 
+                    className="form-input" 
+                    value={editMovId ? editMovForm.fecha : movForm.fecha} 
+                    onChange={e => {
+                      if (editMovId) {
+                        sem('fecha', e.target.value)
+                      } else {
+                        sm('fecha', e.target.value)
+                      }
+                    }} 
+                  />
                 </div>
               </div>
               <div className="form-group">
-                <label className="form-label">Descripción (opcional)</label>
+                <label className="form-label">Descripcion (opcional)</label>
                 <input
                   className="form-input"
                   placeholder="Ej: Ganancias de ventas de la semana"
-                  value={movForm.descripcion}
-                  onChange={e => sm('descripcion', e.target.value)}
+                  value={editMovId ? editMovForm.descripcion : movForm.descripcion}
+                  onChange={e => {
+                    if (editMovId) {
+                      sem('descripcion', e.target.value)
+                    } else {
+                      sm('descripcion', e.target.value)
+                    }
+                  }}
                 />
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setShowMovimiento(false)}>Cancelar</button>
-              <button className="btn btn-gold" onClick={agregarMovimiento}>Guardar</button>
+              <button className="btn btn-outline" onClick={() => { setShowMovimiento(false); setEditMovId(null) }}>Cancelar</button>
+              <button className="btn btn-gold" onClick={editMovId ? editarMovimiento : agregarMovimiento}>
+                {editMovId ? 'Guardar cambios' : 'Guardar'}
+              </button>
             </div>
           </div>
         </div>

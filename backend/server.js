@@ -1,10 +1,10 @@
 const express = require('express');
 const cors = require('cors');
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
+const { createClient } = require('@supabase/supabase-js');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -18,591 +18,523 @@ app.use(cors({
 }));
 app.use(express.json());
 
-const isProduction = process.env.NODE_ENV === 'production';
-const dbPath = isProduction 
-  ? '/tmp/parfum_eclat.db' 
-  : path.join(__dirname, 'parfum_eclat.db');
+// ============================================================
+// CONEXION A SUPABASE
+// ============================================================
+const supabaseUrl = 'https://rvnxajnpcszyzxlxamml.supabase.co';
+const supabaseKey = 'sb_secret_LaSpGbOwUXIPVYI34kKZEQ_Yds70u4u';
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: { autoRefreshToken: false, persistSession: false }
+});
+console.log('Conectado a Supabase con service_role key');
 
-if (isProduction) {
-  const originalDb = path.join(__dirname, 'parfum_eclat.db');
-  if (fs.existsSync(originalDb)) {
-    try {
-      fs.copyFileSync(originalDb, dbPath);
-      console.log('Base de datos copiada a /tmp');
-    } catch (err) {
-      console.warn('No se pudo copiar DB:', err.message);
-    }
+// ============================================================
+// CREAR/ACTUALIZAR ADMIN AL INICIAR
+// ============================================================
+async function crearAdminSupabase() {
+  const defaultPass = 'Chichicuilote1*';
+  const hash = bcrypt.hashSync(defaultPass, 10);
+  console.log('Verificando usuario admin...');
+
+  const { data: existing } = await supabase
+    .from('usuarios').select('id').eq('username', 'admin').maybeSingle();
+
+  if (existing) {
+    await supabase.from('usuarios').update({ password_hash: hash }).eq('username', 'admin');
+    console.log('Admin actualizado.');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('usuarios').insert({ username: 'admin', password_hash: hash });
+
+  if (error) {
+    console.log('Error creando admin:', error.message);
+  } else {
+    console.log('Admin creado. Contrasena:', defaultPass);
   }
 }
+crearAdminSupabase();
 
-const db = new Database(dbPath);
-db.pragma('foreign_keys = ON');
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS perfumes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nombre TEXT NOT NULL,
-    proveedor TEXT DEFAULT '',
-    precio_proveedor REAL NOT NULL DEFAULT 0,
-    precio_publico REAL NOT NULL DEFAULT 0,
-    piezas_compradas INTEGER NOT NULL DEFAULT 1,
-    costo_envio REAL NOT NULL DEFAULT 0,
-    piezas_envio INTEGER NOT NULL DEFAULT 1,
-    notas TEXT DEFAULT '',
-    creado_en TEXT DEFAULT (datetime('now','localtime'))
-  );
-
-  CREATE TABLE IF NOT EXISTS ventas (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    perfume_id INTEGER NOT NULL,
-    cliente TEXT DEFAULT '',
-    cantidad INTEGER NOT NULL DEFAULT 1,
-    precio_unitario REAL NOT NULL DEFAULT 0,
-    total_venta REAL NOT NULL DEFAULT 0,
-    tipo_pago TEXT NOT NULL DEFAULT 'contado' CHECK(tipo_pago IN ('contado','abonos')),
-    abonado REAL NOT NULL DEFAULT 0,
-    fecha TEXT NOT NULL,
-    notas TEXT DEFAULT '',
-    creado_en TEXT DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY (perfume_id) REFERENCES perfumes(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS abonos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    venta_id INTEGER NOT NULL,
-    monto REAL NOT NULL,
-    fecha TEXT NOT NULL,
-    notas TEXT DEFAULT '',
-    creado_en TEXT DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY (venta_id) REFERENCES ventas(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS ahorro_config (
-    id INTEGER PRIMARY KEY CHECK(id = 1),
-    meta REAL NOT NULL DEFAULT 0,
-    descripcion TEXT DEFAULT '',
-    actualizado TEXT DEFAULT (datetime('now','localtime'))
-  );
-
-  CREATE TABLE IF NOT EXISTS ahorro_movimientos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tipo TEXT NOT NULL CHECK(tipo IN ('deposito','retiro')),
-    monto REAL NOT NULL,
-    descripcion TEXT DEFAULT '',
-    fecha TEXT NOT NULL,
-    creado_en TEXT DEFAULT (datetime('now','localtime'))
-  );
-
-  CREATE TABLE IF NOT EXISTS usuarios (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    creado_en TEXT DEFAULT (datetime('now','localtime'))
-  );
-
-  CREATE TABLE IF NOT EXISTS fondo_movimientos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    concepto TEXT NOT NULL,
-    monto REAL NOT NULL,
-    tipo TEXT NOT NULL CHECK(tipo IN ('ingreso','retiro')),
-    fecha TEXT NOT NULL,
-    notas TEXT DEFAULT '',
-    creado_en TEXT DEFAULT (datetime('now','localtime'))
-  );
-`);
-
-function hasColumn(table, col) {
-  try {
-    return db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === col);
-  } catch {
-    return false;
-  }
-}
-
-try {
-  if (!hasColumn('perfumes', 'piezas_envio')) {
-    db.exec(`ALTER TABLE perfumes ADD COLUMN piezas_envio INTEGER NOT NULL DEFAULT 1`);
-    db.exec(`UPDATE perfumes SET piezas_envio = CASE WHEN piezas_compradas > 0 THEN piezas_compradas ELSE 1 END`);
-  }
-  if (!hasColumn('perfumes', 'creado_en')) {
-    db.exec(`ALTER TABLE perfumes ADD COLUMN creado_en TEXT DEFAULT (datetime('now','localtime'))`);
-  }
-  if (hasColumn('perfumes', 'precio_mayoreo') && hasColumn('perfumes', 'precio_proveedor')) {
-    db.exec(`UPDATE perfumes SET precio_proveedor = COALESCE(NULLIF(precio_proveedor, 0), precio_mayoreo, 0)`);
-  }
-} catch (e) {
-  console.warn('Migracion:', e.message);
-}
-
-// =======================================================
-// FORZAR CAMBIO DE CONTRASEÑA DEL ADMIN (EJECUCION DIRECTA)
-// =======================================================
-console.log('Iniciando actualizacion forzada de contrasena...');
-
-const defaultPass = 'Chichicuilote1*';
-const newHash = bcrypt.hashSync(defaultPass, 10);
-
-db.prepare(`
-  INSERT INTO usuarios (id, username, password_hash) 
-  VALUES (1, 'admin', ?)
-  ON CONFLICT(id) DO NOTHING
-`).run(newHash);
-
-db.prepare(`
-  UPDATE usuarios 
-  SET password_hash = ? 
-  WHERE username = 'admin'
-`).run(newHash);
-
-console.log('Contrasena sobrescrita con exito! Ahora es: Chichicuilote1*');
-// =======================================================
-
+// ============================================================
+// FUNCIONES AUXILIARES
+// ============================================================
 function envioUnitario(p) {
   const envio = Number(p.costo_envio) || 0;
   const n = Math.max(Number(p.piezas_envio) || Number(p.piezas_compradas) || 1, 1);
   return envio / n;
 }
-
 function costoUnitario(p) {
   return (Number(p.precio_proveedor) || 0) + envioUnitario(p);
 }
-
-function enrichVenta(v) {
-  const total = Number(v.total_venta) || 0;
-  const abonado = Number(v.abonado) || 0;
-  const resto = Math.max(0, +(total - abonado).toFixed(2));
-  return {
-    ...v,
-    resto,
-    liquidado: resto <= 0.009,
-    pct_pagado: total > 0 ? Math.min(100, Math.round((abonado / total) * 100)) : 0,
-  };
+function gananciaUnitaria(p) {
+  return (Number(p.precio_publico) || 0) - costoUnitario(p);
 }
 
-function enrichPerfume(p) {
-  const vendidos = db.prepare(
-    'SELECT COALESCE(SUM(cantidad),0) as c FROM ventas WHERE perfume_id = ?'
-  ).get(p.id).c;
+// ============================================================
+// LOGIN
+// ============================================================
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body;
+  const { data: user, error } = await supabase
+    .from('usuarios')
+    .select('id, username, password_hash')
+    .eq('username', username)
+    .single();
 
-  const cobrado = db.prepare(
-    'SELECT COALESCE(SUM(abonado),0) as t FROM ventas WHERE perfume_id = ?'
-  ).get(p.id).t;
+  if (error || !user) {
+    return res.status(401).json({ error: 'Usuario o contrasena incorrectos' });
+  }
+  if (!bcrypt.compareSync(password, user.password_hash)) {
+    return res.status(401).json({ error: 'Usuario o contrasena incorrectos' });
+  }
+  const token = jwt.sign(
+    { id: user.id, username: user.username },
+    SECRET_KEY,
+    { expiresIn: '7d' }
+  );
+  res.json({ token, username: user.username });
+});
 
-  const totalVendido = db.prepare(
-    'SELECT COALESCE(SUM(total_venta),0) as t FROM ventas WHERE perfume_id = ?'
-  ).get(p.id).t;
-
-  const porCobrar = db.prepare(
-    'SELECT COALESCE(SUM(total_venta - abonado),0) as t FROM ventas WHERE perfume_id = ? AND abonado < total_venta'
-  ).get(p.id).t;
-
-  const cu = costoUnitario(p);
-  const eu = envioUnitario(p);
-  const piezas = Number(p.piezas_compradas) || 0;
-  const stock = piezas - vendidos;
-  const gananciaUnit = (Number(p.precio_publico) || 0) - cu;
-
-  return {
-    ...p,
-    envio_unitario: eu,
-    costo_unitario: cu,
-    ganancia_unitaria: gananciaUnit,
-    vendidos,
-    stock,
-    cobrado,
-    total_vendido_acordado: totalVendido,
-    por_cobrar: Math.max(0, porCobrar),
-    valor_stock_costo: cu * Math.max(0, stock),
-    valor_stock_publico: (Number(p.precio_publico) || 0) * Math.max(0, stock),
-    capital_invertido: cu * piezas,
-    ganancia_realizada: cobrado - cu * vendidos,
-  };
-}
-
-function resumenGlobal() {
-  const perfumes = db.prepare('SELECT * FROM perfumes').all().map(enrichPerfume);
-  const ventas = db.prepare('SELECT * FROM ventas').all().map(enrichVenta);
-
-  const capitalInvertido = perfumes.reduce((s, p) => s + p.capital_invertido, 0);
-  const valorStockCosto = perfumes.reduce((s, p) => s + p.valor_stock_costo, 0);
-  const valorStockPublico = perfumes.reduce((s, p) => s + p.valor_stock_publico, 0);
-  const totalCobrado = ventas.reduce((s, v) => s + (Number(v.abonado) || 0), 0);
-  const porCobrar = ventas.reduce((s, v) => s + (Number(v.resto) || 0), 0);
-  const totalAcordado = ventas.reduce((s, v) => s + (Number(v.total_venta) || 0), 0);
-  const piezasCompradas = perfumes.reduce((s, p) => s + (Number(p.piezas_compradas) || 0), 0);
-  const piezasVendidas = perfumes.reduce((s, p) => s + p.vendidos, 0);
-  const stock = piezasCompradas - piezasVendidas;
-
-  let costoVendido = 0;
-  for (const p of perfumes) costoVendido += p.costo_unitario * p.vendidos;
-
-  const gananciaRealizada = totalCobrado - costoVendido;
-  const dineroEnCaja = totalCobrado;
-  const capitalEnInventario = valorStockCosto;
-
-  return {
-    num_perfumes: perfumes.length,
-    piezas_compradas: piezasCompradas,
-    piezas_vendidas: piezasVendidas,
-    stock,
-    capital_invertido: capitalInvertido,
-    capital_en_inventario: capitalEnInventario,
-    valor_stock_publico: valorStockPublico,
-    total_acordado: totalAcordado,
-    total_cobrado: totalCobrado,
-    por_cobrar: porCobrar,
-    costo_vendido: costoVendido,
-    ganancia_realizada: gananciaRealizada,
-    dinero_en_caja: dineroEnCaja,
-    potencial_total: totalCobrado + porCobrar + valorStockPublico - capitalEnInventario,
-  };
-}
-
-// Middleware para verificar el token JWT
+// ============================================================
+// AUTENTICACION
+// ============================================================
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.sendStatus(401);
-
   jwt.verify(token, SECRET_KEY, (err, user) => {
     if (err) return res.sendStatus(403);
     req.user = user;
     next();
   });
 }
-
-// Endpoint de LOGIN (NO protegido)
-app.post('/api/login', (req, res) => {
-  const { username, password } = req.body;
-  const user = db.prepare('SELECT * FROM usuarios WHERE username = ?').get(username);
-  if (!user) return res.status(401).json({ error: 'Usuario o contrasena incorrectos' });
-
-  const valid = bcrypt.compareSync(password, user.password_hash);
-  if (!valid) return res.status(401).json({ error: 'Usuario o contrasena incorrectos' });
-
-  const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: '7d' });
-  res.json({ token, username: user.username });
-});
-
-// PROTEGER TODAS LAS RUTAS DE LA API DE AHORA EN ADELANTE
 app.use('/api', authenticateToken);
 
-app.get('/api/resumen', (req, res) => {
-  res.json(resumenGlobal());
-});
-
-app.get('/api/perfumes', (req, res) => {
-  const order = hasColumn('perfumes', 'creado_en')
-    ? 'ORDER BY creado_en DESC, id DESC'
-    : 'ORDER BY id DESC';
-  const rows = db.prepare(`SELECT * FROM perfumes ${order}`).all();
-  res.json(rows.map(enrichPerfume));
-});
-
-app.post('/api/perfumes', (req, res) => {
+// ============================================================
+// RESUMEN (DASHBOARD)
+// ============================================================
+app.get('/api/resumen', async (req, res) => {
   try {
-    const {
-      nombre, proveedor, precio_proveedor, precio_publico,
-      piezas_compradas, costo_envio, piezas_envio, notas,
-    } = req.body;
+    const { data: perfumes } = await supabase.from('perfumes').select('*');
+    const { data: ventas } = await supabase.from('ventas').select('*');
 
-    if (!nombre) return res.status(400).json({ error: 'Nombre del perfume requerido' });
+    const P = perfumes || [];
+    const V = ventas || [];
 
-    const piezas = Math.max(parseInt(piezas_compradas, 10) || 1, 1);
-    const pEnvio = Math.max(parseInt(piezas_envio, 10) || piezas, 1);
-    const envio = Math.max(Number(costo_envio) || 0, 0);
-
-    const r = db.prepare(`
-      INSERT INTO perfumes
-        (nombre, proveedor, precio_proveedor, precio_publico, piezas_compradas, costo_envio, piezas_envio, notas)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      nombre,
-      proveedor || '',
-      Number(precio_proveedor) || 0,
-      Number(precio_publico) || 0,
-      piezas,
-      envio,
-      pEnvio,
-      notas || ''
-    );
-    res.json({ id: r.lastInsertRowid });
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.put('/api/perfumes/:id', (req, res) => {
-  try {
-    const {
-      nombre, proveedor, precio_proveedor, precio_publico,
-      piezas_compradas, costo_envio, piezas_envio, notas,
-    } = req.body;
-    const piezas = Math.max(parseInt(piezas_compradas, 10) || 1, 1);
-    const pEnvio = Math.max(parseInt(piezas_envio, 10) || piezas, 1);
-
-    db.prepare(`
-      UPDATE perfumes SET
-        nombre=?, proveedor=?, precio_proveedor=?, precio_publico=?,
-        piezas_compradas=?, costo_envio=?, piezas_envio=?, notas=?
-      WHERE id=?
-    `).run(
-      nombre,
-      proveedor || '',
-      Number(precio_proveedor) || 0,
-      Number(precio_publico) || 0,
-      piezas,
-      Math.max(Number(costo_envio) || 0, 0),
-      pEnvio,
-      notas || '',
-      req.params.id
-    );
-    res.json({ ok: true });
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.delete('/api/perfumes/:id', (req, res) => {
-  try {
-    const id = req.params.id;
-    db.transaction(() => {
-      const ventas = db.prepare('SELECT id FROM ventas WHERE perfume_id = ?').all(id);
-      for (const v of ventas) {
-        db.prepare('DELETE FROM abonos WHERE venta_id = ?').run(v.id);
+    const vendidasPorPerfume = {};
+    V.forEach(v => {
+      if (v.perfume_id) {
+        vendidasPorPerfume[v.perfume_id] =
+          (vendidasPorPerfume[v.perfume_id] || 0) + (Number(v.cantidad) || 0);
       }
-      db.prepare('DELETE FROM ventas WHERE perfume_id = ?').run(id);
-      db.prepare('DELETE FROM perfumes WHERE id = ?').run(id);
-    })();
-    res.json({ ok: true });
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
+    });
+
+    let dinero_en_caja = 0;
+    let por_cobrar = 0;
+    let ganancia_realizada = 0;
+    let capital_en_inventario = 0;
+    let capital_invertido = 0;
+    let stock = 0;
+    let valor_stock_publico = 0;
+
+    P.forEach(p => {
+      const cu = costoUnitario(p);
+      const compradas = Number(p.piezas_compradas) || 0;
+      const vendidas = vendidasPorPerfume[p.id] || 0;
+      const stk = Math.max(compradas - vendidas, 0);
+
+      stock += stk;
+      capital_en_inventario += cu * stk;
+      capital_invertido += cu * compradas;
+      valor_stock_publico += (Number(p.precio_publico) || 0) * stk;
+    });
+
+    V.forEach(v => {
+      const total = Number(v.total_venta) || 0;
+      const abonado = Number(v.abonado) || 0;
+      const cantidad = Number(v.cantidad) || 0;
+      dinero_en_caja += abonado;
+      por_cobrar += Math.max(total - abonado, 0);
+
+      const p = P.find(x => x.id === v.perfume_id);
+      if (p) {
+        const cu = costoUnitario(p);
+        ganancia_realizada += abonado - (cu * cantidad);
+      }
+    });
+
+    res.json({
+      dinero_en_caja,
+      por_cobrar,
+      ganancia_realizada,
+      capital_en_inventario,
+      capital_invertido,
+      stock,
+      valor_stock_publico
+    });
+  } catch (error) {
+    console.error('Error en /api/resumen:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/ventas', (req, res) => {
-  const rows = db.prepare(`
-    SELECT v.*, p.nombre as perfume_nombre, p.proveedor
-    FROM ventas v
-    JOIN perfumes p ON p.id = v.perfume_id
-    ORDER BY v.fecha DESC, v.id DESC
-  `).all().map(v => {
-    const enr = enrichVenta(v);
-    const abonos = db.prepare(
-      'SELECT * FROM abonos WHERE venta_id = ? ORDER BY fecha DESC, id DESC'
-    ).all(v.id);
-    return { ...enr, abonos };
+// ============================================================
+// PERFUMES (GET, POST, PUT, DELETE)
+// ============================================================
+app.get('/api/perfumes', async (req, res) => {
+  const { data, error } = await supabase
+    .from('perfumes').select('*').order('creado_en', { ascending: false });
+  if (error) return res.status(400).json({ error: error.message });
+
+  const { data: ventas } = await supabase.from('ventas').select('*');
+  const vendPor = {};
+  const cobPor = {};
+  const pcPor = {};
+
+  (ventas || []).forEach(v => {
+    if (!v.perfume_id) return;
+    const pid = v.perfume_id;
+    const cantidad = Number(v.cantidad) || 0;
+    const abonado = Number(v.abonado) || 0;
+    const total = Number(v.total_venta) || 0;
+
+    vendPor[pid] = (vendPor[pid] || 0) + cantidad;
+    cobPor[pid] = (cobPor[pid] || 0) + abonado;
+    pcPor[pid] = (pcPor[pid] || 0) + Math.max(total - abonado, 0);
   });
-  res.json(rows);
+
+  const resultado = data.map(p => ({
+    ...p,
+    vendidos: vendPor[p.id] || 0,
+    stock: Math.max((Number(p.piezas_compradas) || 0) - (vendPor[p.id] || 0), 0),
+    envio_unitario: envioUnitario(p),
+    costo_unitario: costoUnitario(p),
+    ganancia_unitaria: gananciaUnitaria(p),
+    cobrado: cobPor[p.id] || 0,
+    por_cobrar: pcPor[p.id] || 0
+  }));
+  res.json(resultado);
 });
 
-app.post('/api/ventas', (req, res) => {
-  try {
-    const {
-      perfume_id, cliente, cantidad, precio_unitario,
-      total_venta, tipo_pago, abonado, fecha, notas,
-    } = req.body;
+app.post('/api/perfumes', async (req, res) => {
+  const {
+    nombre, proveedor, precio_proveedor, precio_publico,
+    piezas_compradas, costo_envio, piezas_envio, notas
+  } = req.body;
 
-    if (!perfume_id || !fecha) {
-      return res.status(400).json({ error: 'Perfume y fecha son requeridos' });
-    }
+  if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
 
-    const perfume = db.prepare('SELECT * FROM perfumes WHERE id = ?').get(perfume_id);
-    if (!perfume) return res.status(404).json({ error: 'Perfume no encontrado' });
+  const { data, error } = await supabase.from('perfumes').insert({
+    nombre, proveedor,
+    precio_proveedor: Number(precio_proveedor) || 0,
+    precio_publico: Number(precio_publico) || 0,
+    piezas_compradas: Number(piezas_compradas) || 1,
+    costo_envio: Number(costo_envio) || 0,
+    piezas_envio: Number(piezas_envio) || 1,
+    notas
+  }).select();
 
-    const qty = Math.max(parseInt(cantidad, 10) || 1, 1);
-    const vendidos = db.prepare(
-      'SELECT COALESCE(SUM(cantidad),0) as c FROM ventas WHERE perfume_id = ?'
-    ).get(perfume_id).c;
-    const stock = (Number(perfume.piezas_compradas) || 0) - vendidos;
-    if (qty > stock) {
-      return res.status(400).json({ error: `Stock insuficiente. Disponible: ${stock}` });
-    }
-
-    const unit = Number(precio_unitario) || Number(perfume.precio_publico) || 0;
-    const total = Number(total_venta) || unit * qty;
-    const tipo = tipo_pago === 'abonos' ? 'abonos' : 'contado';
-    let abon = Number(abonado);
-    if (Number.isNaN(abon) || abonado === undefined || abonado === null || abonado === '') {
-      abon = tipo === 'contado' ? total : 0;
-    }
-    abon = Math.min(Math.max(0, abon), total);
-
-    const id = db.transaction(() => {
-      const r = db.prepare(`
-        INSERT INTO ventas
-          (perfume_id, cliente, cantidad, precio_unitario, total_venta, tipo_pago, abonado, fecha, notas)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(perfume_id, cliente || '', qty, unit, total, tipo, abon, fecha, notas || '');
-
-      if (abon > 0) {
-        db.prepare(`
-          INSERT INTO abonos (venta_id, monto, fecha, notas) VALUES (?, ?, ?, ?)
-        `).run(r.lastInsertRowid, abon, fecha, tipo === 'contado' ? 'Pago completo' : 'Abono inicial');
-      }
-      return r.lastInsertRowid;
-    })();
-
-    res.json({ id });
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
-  }
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ id: data[0].id });
 });
 
-app.put('/api/ventas/:id', (req, res) => {
-  try {
-    const v = db.prepare('SELECT * FROM ventas WHERE id = ?').get(req.params.id);
-    if (!v) return res.status(404).json({ error: 'Venta no encontrada' });
+app.put('/api/perfumes/:id', async (req, res) => {
+  const { id } = req.params;
+  const {
+    nombre, proveedor, precio_proveedor, precio_publico,
+    piezas_compradas, costo_envio, piezas_envio, notas
+  } = req.body;
 
-    const { cliente, cantidad, precio_unitario, total_venta, tipo_pago, fecha, notas } = req.body;
-    const qty = Math.max(parseInt(cantidad ?? v.cantidad, 10) || 1, 1);
-    const unit = Number(precio_unitario ?? v.precio_unitario) || 0;
-    const total = Number(total_venta) || unit * qty;
-    const tipo = tipo_pago === 'abonos' ? 'abonos' : (tipo_pago === 'contado' ? 'contado' : v.tipo_pago);
-    const abonado = Math.min(Number(v.abonado) || 0, total);
+  const { data, error } = await supabase.from('perfumes').update({
+    nombre, proveedor,
+    precio_proveedor: Number(precio_proveedor) || 0,
+    precio_publico: Number(precio_publico) || 0,
+    piezas_compradas: Number(piezas_compradas) || 1,
+    costo_envio: Number(costo_envio) || 0,
+    piezas_envio: Number(piezas_envio) || 1,
+    notas
+  }).eq('id', id).select();
 
-    db.prepare(`
-      UPDATE ventas SET cliente=?, cantidad=?, precio_unitario=?, total_venta=?, tipo_pago=?, abonado=?, fecha=?, notas=?
-      WHERE id=?
-    `).run(
-      cliente ?? v.cliente,
-      qty,
-      unit,
-      total,
-      tipo,
-      abonado,
-      fecha || v.fecha,
-      notas ?? v.notas,
-      req.params.id
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ id: data[0].id });
+});
+
+app.delete('/api/perfumes/:id', async (req, res) => {
+  const { id } = req.params;
+  const { error } = await supabase.from('perfumes').delete().eq('id', id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// ============================================================
+// VENTAS (GET, POST, PUT, DELETE)
+// ============================================================
+app.get('/api/ventas', async (req, res) => {
+  const { data, error } = await supabase
+    .from('ventas')
+    .select('*, perfumes(nombre, proveedor), abonos(*)')
+    .order('fecha', { ascending: false });
+
+  if (error) return res.status(400).json({ error: error.message });
+
+  const resultado = (data || []).map(v => {
+    const total = Number(v.total_venta) || 0;
+
+    const abonadoExtra = (v.abonos || []).reduce(
+      (s, a) => s + (Number(a.monto) || 0), 0
     );
-    res.json({ ok: true });
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
+    const abonado = (Number(v.abonado) || 0) + abonadoExtra;
+
+    const resto = Math.max(total - abonado, 0);
+    const pct_pagado = total > 0 ? Math.round((abonado / total) * 100) : 0;
+    const liquidado = resto <= 0 && total > 0;
+
+    return {
+      ...v,
+      abonos: v.abonos || [],
+      abonado,
+      perfume_nombre: v.perfumes?.nombre || '-',
+      resto,
+      liquidado,
+      pct_pagado
+    };
+  });
+
+  res.json(resultado);
+});
+
+app.post('/api/ventas', async (req, res) => {
+  const {
+    perfume_id, cliente, cantidad, precio_unitario,
+    total_venta, tipo_pago, abonado, fecha, notas
+  } = req.body;
+
+  if (!perfume_id || !fecha) {
+    return res.status(400).json({ error: 'Perfume y fecha requeridos' });
   }
+
+  const { data, error } = await supabase.from('ventas').insert({
+    perfume_id,
+    cliente,
+    cantidad: Number(cantidad) || 1,
+    precio_unitario: Number(precio_unitario) || 0,
+    total_venta: Number(total_venta) || 0,
+    tipo_pago,
+    abonado: Number(abonado) || 0,
+    fecha,
+    notas
+  }).select();
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ id: data[0].id });
 });
 
-app.delete('/api/ventas/:id', (req, res) => {
-  try {
-    db.transaction(() => {
-      db.prepare('DELETE FROM abonos WHERE venta_id = ?').run(req.params.id);
-      db.prepare('DELETE FROM ventas WHERE id = ?').run(req.params.id);
-    })();
-    res.json({ ok: true });
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
-  }
+app.put('/api/ventas/:id', async (req, res) => {
+  const { id } = req.params;
+  const {
+    perfume_id, cliente, cantidad, precio_unitario,
+    total_venta, tipo_pago, abonado, fecha, notas
+  } = req.body;
+
+  const { data, error } = await supabase.from('ventas').update({
+    perfume_id,
+    cliente,
+    cantidad: Number(cantidad) || 1,
+    precio_unitario: Number(precio_unitario) || 0,
+    total_venta: Number(total_venta) || 0,
+    tipo_pago,
+    abonado: Number(abonado) || 0,
+    fecha,
+    notas
+  }).eq('id', id).select();
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ id: data[0].id });
 });
 
-app.post('/api/ventas/:id/abonos', (req, res) => {
-  try {
-    const venta = db.prepare('SELECT * FROM ventas WHERE id = ?').get(req.params.id);
-    if (!venta) return res.status(404).json({ error: 'Venta no encontrada' });
-
-    const { monto, fecha, notas } = req.body;
-    const m = Number(monto);
-    if (!m || m <= 0) return res.status(400).json({ error: 'Monto invalido' });
-    if (!fecha) return res.status(400).json({ error: 'Fecha requerida' });
-
-    const resto = (Number(venta.total_venta) || 0) - (Number(venta.abonado) || 0);
-    if (m > resto + 0.01) {
-      return res.status(400).json({ error: `No puede superar el resto ($${resto.toFixed(2)})` });
-    }
-
-    const id = db.transaction(() => {
-      const r = db.prepare(
-        'INSERT INTO abonos (venta_id, monto, fecha, notas) VALUES (?, ?, ?, ?)'
-      ).run(venta.id, m, fecha, notas || '');
-      db.prepare('UPDATE ventas SET abonado = abonado + ? WHERE id = ?').run(m, venta.id);
-      return r.lastInsertRowid;
-    })();
-
-    const updated = enrichVenta(db.prepare('SELECT * FROM ventas WHERE id = ?').get(venta.id));
-    res.json({ id, venta: updated });
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.delete('/api/abonos/:id', (req, res) => {
-  try {
-    const abono = db.prepare('SELECT * FROM abonos WHERE id = ?').get(req.params.id);
-    if (!abono) return res.status(404).json({ error: 'Abono no encontrado' });
-    db.transaction(() => {
-      db.prepare('DELETE FROM abonos WHERE id = ?').run(abono.id);
-      db.prepare('UPDATE ventas SET abonado = MAX(0, abonado - ?) WHERE id = ?').run(abono.monto, abono.venta_id);
-    })();
-    res.json({ ok: true });
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.get('/api/ahorro/config', (req, res) => {
-  const row = db.prepare('SELECT * FROM ahorro_config WHERE id = 1').get();
-  if (!row) return res.status(404).json({ error: 'No configurado' });
-  res.json(row);
-});
-
-app.post('/api/ahorro/config', (req, res) => {
-  const { meta, descripcion } = req.body;
-  db.prepare(`
-    INSERT INTO ahorro_config (id, meta, descripcion) VALUES (1, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET meta=excluded.meta, descripcion=excluded.descripcion,
-      actualizado=datetime('now','localtime')
-  `).run(meta, descripcion || '');
+app.delete('/api/ventas/:id', async (req, res) => {
+  const { id } = req.params;
+  const { error } = await supabase.from('ventas').delete().eq('id', id);
+  if (error) return res.status(400).json({ error: error.message });
   res.json({ ok: true });
 });
 
-app.get('/api/ahorro/movimientos', (req, res) => {
-  res.json(db.prepare('SELECT * FROM ahorro_movimientos ORDER BY fecha DESC, creado_en DESC').all());
+// ============================================================
+// ABONOS (POST, PUT, DELETE)
+// ============================================================
+app.post('/api/ventas/:id/abonos', async (req, res) => {
+  const venta_id = Number(req.params.id);
+  const { monto, fecha, notas } = req.body;
+
+  if (!monto || Number(monto) <= 0) {
+    return res.status(400).json({ error: 'Monto invalido' });
+  }
+  if (!fecha) return res.status(400).json({ error: 'Fecha requerida' });
+
+  const { data, error } = await supabase.from('abonos').insert({
+    venta_id,
+    monto: Number(monto),
+    fecha,
+    notas
+  }).select();
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ id: data[0].id });
 });
 
-app.post('/api/ahorro/movimientos', (req, res) => {
-  const { tipo, monto, descripcion, fecha } = req.body;
-  const r = db.prepare(
-    'INSERT INTO ahorro_movimientos (tipo, monto, descripcion, fecha) VALUES (?, ?, ?, ?)'
-  ).run(tipo, monto, descripcion || '', fecha);
-  res.json({ id: r.lastInsertRowid });
+app.put('/api/abonos/:id', async (req, res) => {
+  const { id } = req.params;
+  const { monto, fecha, notas } = req.body;
+
+  if (!monto || Number(monto) <= 0) {
+    return res.status(400).json({ error: 'Monto invalido' });
+  }
+  if (!fecha) return res.status(400).json({ error: 'Fecha requerida' });
+
+  const { data, error } = await supabase.from('abonos').update({
+    monto: Number(monto),
+    fecha,
+    notas
+  }).eq('id', id).select();
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ id: data[0].id });
 });
 
-app.delete('/api/ahorro/movimientos/:id', (req, res) => {
-  db.prepare('DELETE FROM ahorro_movimientos WHERE id = ?').run(req.params.id);
+app.delete('/api/abonos/:id', async (req, res) => {
+  const { id } = req.params;
+  const { error } = await supabase.from('abonos').delete().eq('id', id);
+  if (error) return res.status(400).json({ error: error.message });
   res.json({ ok: true });
 });
 
-app.get('/api/fondo/movimientos', (req, res) => {
-  const rows = db.prepare('SELECT * FROM fondo_movimientos ORDER BY fecha DESC, id DESC').all();
-  res.json(rows);
+// ============================================================
+// FONDO DE SOCIOS (GET, POST, PUT, DELETE)
+// ============================================================
+app.get('/api/fondo/movimientos', async (req, res) => {
+  const { data, error } = await supabase
+    .from('fondo_movimientos').select('*').order('fecha', { ascending: false });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
 });
 
-app.post('/api/fondo/movimientos', (req, res) => {
+app.post('/api/fondo/movimientos', async (req, res) => {
   const { concepto, monto, tipo, fecha, notas } = req.body;
-  if (!concepto || monto === undefined || monto === null || monto === '' || !fecha) {
-    return res.status(400).json({ error: 'Concepto, monto y fecha son requeridos' });
+  if (!concepto || !monto || !fecha) {
+    return res.status(400).json({ error: 'Concepto, monto y fecha son obligatorios' });
   }
-  const m = Number(monto);
-  if (m === 0) return res.status(400).json({ error: 'El monto no puede ser 0' });
-
-  const r = db.prepare(`
-    INSERT INTO fondo_movimientos (concepto, monto, tipo, fecha, notas) 
-    VALUES (?, ?, ?, ?, ?)
-  `).run(concepto, m, tipo, fecha, notas || '');
-  res.json({ id: r.lastInsertRowid });
+  const { data, error } = await supabase.from('fondo_movimientos').insert({
+    concepto,
+    monto: Number(monto),
+    tipo,
+    fecha,
+    notas
+  }).select();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ id: data[0].id });
 });
 
-app.delete('/api/fondo/movimientos/:id', (req, res) => {
-  db.prepare('DELETE FROM fondo_movimientos WHERE id = ?').run(req.params.id);
+app.put('/api/fondo/movimientos/:id', async (req, res) => {
+  const { id } = req.params;
+  const { concepto, monto, tipo, fecha, notas } = req.body;
+  if (!concepto || !monto || !fecha) {
+    return res.status(400).json({ error: 'Concepto, monto y fecha son obligatorios' });
+  }
+  const { data, error } = await supabase.from('fondo_movimientos').update({
+    concepto,
+    monto: Number(monto),
+    tipo,
+    fecha,
+    notas
+  }).eq('id', id).select();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ id: data[0].id });
+});
+
+app.delete('/api/fondo/movimientos/:id', async (req, res) => {
+  const { id } = req.params;
+  const { error } = await supabase.from('fondo_movimientos').delete().eq('id', id);
+  if (error) return res.status(400).json({ error: error.message });
   res.json({ ok: true });
 });
 
+// ============================================================
+// AHORRO CONFIG (GET, POST/UPSERT)
+// ============================================================
+app.get('/api/ahorro/config', async (req, res) => {
+  const { data, error } = await supabase
+    .from('ahorro_config').select('*').eq('id', 1).maybeSingle();
+  if (error) return res.status(400).json({ error: error.message });
+  if (!data) return res.status(404).json({ error: 'No configurado' });
+  res.json(data);
+});
+
+app.post('/api/ahorro/config', async (req, res) => {
+  const { meta, descripcion } = req.body;
+  if (!meta) return res.status(400).json({ error: 'Meta requerida' });
+
+  const { data, error } = await supabase.from('ahorro_config').upsert({
+    id: 1,
+    meta: Number(meta),
+    descripcion
+  }).select();
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// ============================================================
+// AHORRO MOVIMIENTOS (GET, POST, PUT, DELETE)
+// ============================================================
+app.get('/api/ahorro/movimientos', async (req, res) => {
+  const { data, error } = await supabase
+    .from('ahorro_movimientos').select('*').order('fecha', { ascending: false });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+app.post('/api/ahorro/movimientos', async (req, res) => {
+  const { tipo, monto, descripcion, fecha } = req.body;
+  if (!tipo || !monto || !fecha) {
+    return res.status(400).json({ error: 'Tipo, monto y fecha requeridos' });
+  }
+  const { data, error } = await supabase.from('ahorro_movimientos').insert({
+    tipo,
+    monto: Number(monto),
+    descripcion,
+    fecha
+  }).select();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ id: data[0].id });
+});
+
+app.put('/api/ahorro/movimientos/:id', async (req, res) => {
+  const { id } = req.params;
+  const { tipo, monto, descripcion, fecha } = req.body;
+  if (!tipo || !monto || !fecha) {
+    return res.status(400).json({ error: 'Tipo, monto y fecha requeridos' });
+  }
+  const { data, error } = await supabase.from('ahorro_movimientos').update({
+    tipo,
+    monto: Number(monto),
+    descripcion,
+    fecha
+  }).eq('id', id).select();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ id: data[0].id });
+});
+
+app.delete('/api/ahorro/movimientos/:id', async (req, res) => {
+  const { id } = req.params;
+  const { error } = await supabase.from('ahorro_movimientos').delete().eq('id', id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// ============================================================
+// SERVIDOR FRONTEND
+// ============================================================
 const distPath = path.join(__dirname, '../frontend/dist');
 if (fs.existsSync(distPath)) {
   console.log('Sirviendo frontend desde:', distPath);
@@ -615,8 +547,11 @@ if (fs.existsSync(distPath)) {
   console.log('Frontend no encontrado, solo API disponible');
 }
 
+// ============================================================
+// ARRANQUE DEL SERVIDOR
+// ============================================================
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor corriendo en puerto ${PORT}`);
-  console.log(`Modo: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`Base de datos: ${dbPath}`);
+  console.log('Servidor corriendo en puerto ' + PORT);
+  console.log('Modo: ' + (process.env.NODE_ENV || 'development'));
+  console.log('Conectado a Supabase: ' + supabaseUrl);
 });
