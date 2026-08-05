@@ -22,7 +22,7 @@ app.use(express.json());
 // CONEXION A SUPABASE
 // ============================================================
 const supabaseUrl = 'https://rvnxajnpcszyzxlxamml.supabase.co';
-const supabaseKey = 'sb_secret_LaSpGbOwUXIPVYI34kKZEQ_Yds70u4u';
+const supabaseKey = process.env.SUPABASE_KEY || 'sb_publishable_iXc0eIJjHPRxS1IRhTOg-Q_nwgpzEMr';
 const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: { autoRefreshToken: false, persistSession: false }
 });
