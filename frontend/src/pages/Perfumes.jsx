@@ -251,8 +251,6 @@ export default function Perfumes() {
                   <th>Cant.</th>
                   <th>Vend.</th>
                   <th>Stock</th>
-                  <th>Cobrado</th>
-                  <th>Por cobrar</th>
                   <th></th>
                 </tr>
               </thead>
@@ -274,8 +272,6 @@ export default function Perfumes() {
                     <td>{p.piezas_compradas}</td>
                     <td>{p.vendidos}</td>
                     <td>{p.stock}</td>
-                    <td className="td-green">{fmt(p.cobrado)}</td>
-                    <td className="td-gold">{fmt(p.por_cobrar)}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <button className="btn-icon" title="Editar" onClick={() => openEditPerfume(p)}><Pencil size={14} /></button>
                       <button className="btn-icon" title="Eliminar" onClick={() => eliminar('perfumes', p.id)}><Trash2 size={14} /></button>
