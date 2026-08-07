@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, X, Trash2, Wallet, ArrowUpRight, ArrowDownLeft, Calendar } from 'lucide-react';
+import { Plus, X, Trash2, Wallet, Pencil } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
 
 const hoy = new Date().toISOString().split('T')[0];
@@ -7,7 +7,7 @@ const hoy = new Date().toISOString().split('T')[0];
 const emptyMovimiento = {
   concepto: '',
   monto: '',
-  tipo: 'retiro', // retiro o ingreso
+  tipo: 'retiro',
   fecha: hoy,
   notas: '',
 };
@@ -17,6 +17,7 @@ export default function Fondo() {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(emptyMovimiento);
   const [error, setError] = useState('');
+  const [editId, setEditId] = useState(null);
 
   const load = async () => {
     const data = await api.get('/fondo/movimientos');
@@ -35,9 +36,8 @@ export default function Fondo() {
     .reduce((sum, m) => sum + m.monto, 0);
   const saldoActual = totalIngresado - totalRetirado;
 
-  // Mensaje de "Dinero disponible o faltante"
   let mensajeFondo = '';
-  let colorMensaje = '#4a8c6a'; // Verde por defecto
+  let colorMensaje = '#4a8c6a';
 
   if (saldoActual > 0) {
     mensajeFondo = `Te sobran ${fmt(saldoActual)} libres en el fondo.`;
@@ -46,8 +46,22 @@ export default function Fondo() {
     colorMensaje = 'var(--cream-dim)';
   } else {
     mensajeFondo = `Faltan ${fmt(Math.abs(saldoActual))} por devolver al fondo.`;
-    colorMensaje = '#c45c5c'; // Rojo porque debes dinero
+    colorMensaje = '#c45c5c';
   }
+
+  // --- NUEVA FUNCIÓN PARA ABRIR EDICIÓN ---
+  const openEdit = (m) => {
+    setEditId(m.id);
+    setForm({
+      concepto: m.concepto || '',
+      monto: m.monto ?? '',
+      tipo: m.tipo || 'retiro',
+      fecha: m.fecha || hoy,
+      notas: m.notas || '',
+    });
+    setError('');
+    setShowModal(true);
+  };
 
   const handleSubmit = async () => {
     setError('');
@@ -55,10 +69,20 @@ export default function Fondo() {
       setError('Concepto, monto y fecha son obligatorios');
       return;
     }
-    const res = await api.post('/fondo/movimientos', form);
+
+    let res;
+    if (editId) {
+      // Si hay editId, es una ACTUALIZACIÓN (PUT)
+      res = await api.put(`/fondo/movimientos/${editId}`, form);
+    } else {
+      // Si no hay editId, es un nuevo registro (POST)
+      res = await api.post('/fondo/movimientos', form);
+    }
+
     if (res.error) { setError(res.error); return; }
     await load();
     setShowModal(false);
+    setEditId(null);
     setForm(emptyMovimiento);
   };
 
@@ -78,7 +102,12 @@ export default function Fondo() {
           </h1>
           <div className="label" style={{ marginTop: 6 }}>Control de retiros e ingresos entre socios</div>
         </div>
-        <button className="btn btn-gold" onClick={() => { setError(''); setForm({ ...emptyMovimiento, fecha: hoy }); setShowModal(true); }}>
+        <button className="btn btn-gold" onClick={() => { 
+          setError(''); 
+          setEditId(null); 
+          setForm({ ...emptyMovimiento, fecha: hoy }); 
+          setShowModal(true); 
+        }}>
           <Plus size={14} /> Registrar Movimiento
         </button>
       </div>
@@ -86,7 +115,7 @@ export default function Fondo() {
       {/* ESTADÍSTICAS Y RESUMEN DEL FONDO */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 28 }}>
         <div className="stat-card">
-          <div className="label">Saldo Actual del Fondo</div>
+          <div className="label">Dinero en Fondo</div> {/* CAMBIADO EL NOMBRE */}
           <div className="stat-value" style={{ color: saldoActual >= 0 ? '#4a8c6a' : '#c45c5c' }}>
             {fmt(saldoActual)}
           </div>
@@ -162,8 +191,12 @@ export default function Fondo() {
                       {m.tipo === 'ingreso' ? '+' : '-'}{fmt(m.monto)}
                     </td>
                     <td className="td-muted">{m.notas || '—'}</td>
-                    <td>
-                      <button className="btn-icon" onClick={() => handleDelete(m.id)}>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      {/* BOTÓN DE EDITAR (NUEVO) */}
+                      <button className="btn-icon" title="Editar" onClick={() => openEdit(m)}>
+                        <Pencil size={14} />
+                      </button>
+                      <button className="btn-icon" title="Eliminar" onClick={() => handleDelete(m.id)}>
                         <Trash2 size={14} />
                       </button>
                     </td>
@@ -175,12 +208,14 @@ export default function Fondo() {
         )}
       </div>
 
-      {/* MODAL PARA REGISTRAR MOVIMIENTO */}
+      {/* MODAL PARA REGISTRAR/EDITAR MOVIMIENTO */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <div className="modal-title">Registrar Movimiento del Fondo</div>
+              <div className="modal-title">
+                {editId ? 'Editar Movimiento del Fondo' : 'Registrar Movimiento del Fondo'}
+              </div>
               <button className="btn-icon" onClick={() => setShowModal(false)}><X size={16} /></button>
             </div>
             <div className="modal-body">
@@ -230,7 +265,9 @@ export default function Fondo() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancelar</button>
-              <button className="btn btn-gold" onClick={handleSubmit}>Guardar Movimiento</button>
+              <button className="btn btn-gold" onClick={handleSubmit}>
+                {editId ? 'Guardar Cambios' : 'Guardar Movimiento'}
+              </button>
             </div>
           </div>
         </div>
