@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, X, Trash2, Wallet, Pencil } from 'lucide-react';
+import { Plus, X, Trash2, Wallet, ArrowUpRight, ArrowDownLeft, Calendar } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
 
 const hoy = new Date().toISOString().split('T')[0];
@@ -7,7 +7,7 @@ const hoy = new Date().toISOString().split('T')[0];
 const emptyMovimiento = {
   concepto: '',
   monto: '',
-  tipo: 'retiro',
+  tipo: 'retiro', // retiro o ingreso
   fecha: hoy,
   notas: '',
 };
@@ -15,7 +15,6 @@ const emptyMovimiento = {
 export default function Fondo() {
   const [movimientos, setMovimientos] = useState([]);
   const [showModal, setShowModal] = useState(false);
-  const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(emptyMovimiento);
   const [error, setError] = useState('');
 
@@ -30,31 +29,25 @@ export default function Fondo() {
 
   const totalRetirado = movimientos
     .filter(m => m.tipo === 'retiro')
-    .reduce((sum, m) => sum + (Number(m.monto) || 0), 0);
+    .reduce((sum, m) => sum + m.monto, 0);
   const totalIngresado = movimientos
     .filter(m => m.tipo === 'ingreso')
-    .reduce((sum, m) => sum + (Number(m.monto) || 0), 0);
+    .reduce((sum, m) => sum + m.monto, 0);
   const saldoActual = totalIngresado - totalRetirado;
 
-  const openNew = () => {
-    setError('');
-    setEditId(null);
-    setForm({ ...emptyMovimiento, fecha: hoy });
-    setShowModal(true);
-  };
+  // Mensaje de "Dinero disponible o faltante"
+  let mensajeFondo = '';
+  let colorMensaje = '#4a8c6a'; // Verde por defecto
 
-  const openEdit = (m) => {
-    setError('');
-    setEditId(m.id);
-    setForm({
-      concepto: m.concepto || '',
-      monto: m.monto ?? '',
-      tipo: m.tipo || 'retiro',
-      fecha: m.fecha || hoy,
-      notas: m.notas || '',
-    });
-    setShowModal(true);
-  };
+  if (saldoActual > 0) {
+    mensajeFondo = `Te sobran ${fmt(saldoActual)} libres en el fondo.`;
+  } else if (saldoActual === 0) {
+    mensajeFondo = `El fondo está en $0. No hay dinero disponible.`;
+    colorMensaje = 'var(--cream-dim)';
+  } else {
+    mensajeFondo = `Faltan ${fmt(Math.abs(saldoActual))} por devolver al fondo.`;
+    colorMensaje = '#c45c5c'; // Rojo porque debes dinero
+  }
 
   const handleSubmit = async () => {
     setError('');
@@ -62,18 +55,15 @@ export default function Fondo() {
       setError('Concepto, monto y fecha son obligatorios');
       return;
     }
-    const res = editId
-      ? await api.put(`/fondo/movimientos/${editId}`, form)
-      : await api.post('/fondo/movimientos', form);
+    const res = await api.post('/fondo/movimientos', form);
     if (res.error) { setError(res.error); return; }
     await load();
     setShowModal(false);
-    setEditId(null);
     setForm(emptyMovimiento);
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Eliminar este movimiento del fondo?')) return;
+    if (!confirm('¿Eliminar este movimiento del fondo?')) return;
     await api.delete(`/fondo/movimientos/${id}`);
     load();
   };
@@ -82,17 +72,18 @@ export default function Fondo() {
     <div>
       <div className="page-header">
         <div>
-          <div className="ornament">* * *</div>
+          <div className="ornament">✦ ✦ ✦</div>
           <h1 className="page-title" style={{ marginTop: 8 }}>
             Fondo <span>de Socios</span>
           </h1>
           <div className="label" style={{ marginTop: 6 }}>Control de retiros e ingresos entre socios</div>
         </div>
-        <button className="btn btn-gold" onClick={openNew}>
+        <button className="btn btn-gold" onClick={() => { setError(''); setForm({ ...emptyMovimiento, fecha: hoy }); setShowModal(true); }}>
           <Plus size={14} /> Registrar Movimiento
         </button>
       </div>
 
+      {/* ESTADÍSTICAS Y RESUMEN DEL FONDO */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 28 }}>
         <div className="stat-card">
           <div className="label">Saldo Actual del Fondo</div>
@@ -110,6 +101,31 @@ export default function Fondo() {
         </div>
       </div>
 
+      {/* MENSAJE DE "TE SOBRA / TE FALTA" */}
+      <div className="card" style={{ 
+        marginBottom: 24, 
+        padding: '18px 24px',
+        borderColor: saldoActual < 0 ? '#c45c5c' : '#4a8c6a',
+        borderWidth: '2px'
+      }}>
+        <div className="flex-between" style={{ alignItems: 'center' }}>
+          <div>
+            <div className="label" style={{ marginBottom: 4 }}>Estado del Fondo</div>
+            <div style={{ 
+              fontSize: '1.2rem', 
+              fontWeight: 500,
+              color: colorMensaje
+            }}>
+              {mensajeFondo}
+            </div>
+          </div>
+          <div style={{ fontSize: '2rem', lineHeight: 1 }}>
+            {saldoActual < 0 ? '⚠️' : '✅'}
+          </div>
+        </div>
+      </div>
+
+      {/* HISTORIAL DE MOVIMIENTOS */}
       <div className="card">
         <div className="flex-between" style={{ marginBottom: 14 }}>
           <span className="section-title">Historial del Fondo</span>
@@ -145,12 +161,9 @@ export default function Fondo() {
                     <td className={m.tipo === 'ingreso' ? 'td-green' : 'td-red'}>
                       {m.tipo === 'ingreso' ? '+' : '-'}{fmt(m.monto)}
                     </td>
-                    <td className="td-muted">{m.notas || '-'}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <button className="btn-icon" title="Editar" onClick={() => openEdit(m)}>
-                        <Pencil size={14} />
-                      </button>
-                      <button className="btn-icon" title="Eliminar" onClick={() => handleDelete(m.id)}>
+                    <td className="td-muted">{m.notas || '—'}</td>
+                    <td>
+                      <button className="btn-icon" onClick={() => handleDelete(m.id)}>
                         <Trash2 size={14} />
                       </button>
                     </td>
@@ -162,24 +175,23 @@ export default function Fondo() {
         )}
       </div>
 
+      {/* MODAL PARA REGISTRAR MOVIMIENTO */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <div className="modal-title">
-                {editId ? 'Editar Movimiento del Fondo' : 'Registrar Movimiento del Fondo'}
-              </div>
+              <div className="modal-title">Registrar Movimiento del Fondo</div>
               <button className="btn-icon" onClick={() => setShowModal(false)}><X size={16} /></button>
             </div>
             <div className="modal-body">
               {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>{error}</div>}
               <div className="form-group">
                 <label className="form-label">Concepto *</label>
-                <input
-                  className="form-input"
-                  value={form.concepto}
-                  onChange={e => sf('concepto', e.target.value)}
-                  placeholder="Ej: Prestamo para viaje, Fondas para perfumes..."
+                <input 
+                  className="form-input" 
+                  value={form.concepto} 
+                  onChange={e => sf('concepto', e.target.value)} 
+                  placeholder="Ej: Préstamo para viaje, Fondos para perfumes..."
                   autoFocus
                 />
               </div>
@@ -193,11 +205,11 @@ export default function Fondo() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Monto ($) *</label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    value={form.monto}
-                    onChange={e => sf('monto', e.target.value)}
+                  <input 
+                    type="number" 
+                    className="form-input" 
+                    value={form.monto} 
+                    onChange={e => sf('monto', e.target.value)} 
                     placeholder="0"
                   />
                 </div>
@@ -208,19 +220,17 @@ export default function Fondo() {
               </div>
               <div className="form-group">
                 <label className="form-label">Notas (opcional)</label>
-                <input
-                  className="form-input"
-                  value={form.notas}
-                  onChange={e => sf('notas', e.target.value)}
+                <input 
+                  className="form-input" 
+                  value={form.notas} 
+                  onChange={e => sf('notas', e.target.value)} 
                   placeholder="Detalles adicionales..."
                 />
               </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancelar</button>
-              <button className="btn btn-gold" onClick={handleSubmit}>
-                {editId ? 'Guardar cambios' : 'Guardar Movimiento'}
-              </button>
+              <button className="btn btn-gold" onClick={handleSubmit}>Guardar Movimiento</button>
             </div>
           </div>
         </div>

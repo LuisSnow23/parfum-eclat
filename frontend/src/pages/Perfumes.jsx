@@ -180,6 +180,9 @@ export default function Perfumes() {
     return <div className="flex-center" style={{ height: 280, color: 'var(--cream-dim)' }}>Cargando...</div>
   }
 
+  // Cálculo del Total por cobrar sumando los 'resto' de todas las ventas
+  const totalPorCobrarGlobal = ventas.reduce((acc, venta) => acc + (venta.resto || 0), 0);
+
   return (
     <div>
       <div className="page-header">
@@ -208,7 +211,8 @@ export default function Perfumes() {
       {/* CONTROL DE DINERO */}
       <div className="stats-grid">
         <Kpi label="Dinero en caja (cobrado)" value={fmt(resumen.dinero_en_caja)} color="#4a8c6a" />
-        <Kpi label="Por cobrar (clientes)" value={fmt(resumen.por_cobrar)} color="#c9a84c" />
+        {/* REEMPLAZAMOS LA TARJETA DE POR COBRAR POR LA SUMA DE RESTAS */}
+        <Kpi label="Por cobrar (de ventas)" value={fmt(totalPorCobrarGlobal)} color="#c9a84c" />
         <Kpi label="Ganancia realizada" value={fmt(resumen.ganancia_realizada)} color={resumen.ganancia_realizada >= 0 ? '#4a8c6a' : '#c45c5c'} />
         <Kpi label="Capital en inventario" value={fmt(resumen.capital_en_inventario)} />
         <Kpi label="Capital total invertido" value={fmt(resumen.capital_invertido)} />
@@ -219,7 +223,7 @@ export default function Perfumes() {
       <div className="card" style={{ marginBottom: 16, padding: '14px 18px', fontSize: '0.8rem', color: 'var(--cream-dim)', lineHeight: 1.6 }}>
         <strong style={{ color: 'var(--gold)' }}>Cómo leer los números:</strong>{' '}
         <em>Dinero en caja</em> = lo que ya te pagaron los clientes.{' '}
-        <em>Por cobrar</em> = saldos de ventas a plazos.{' '}
+        <em>Por cobrar</em> = Suma de los saldos restantes de TODAS las ventas.{' '}
         <em>Capital en inventario</em> = lo que te costó lo que aún no vendes.{' '}
         <em>Ganancia realizada</em> = cobrado − costo de lo ya vendido.
       </div>
@@ -228,7 +232,7 @@ export default function Perfumes() {
         <div className="card" style={{ borderColor: '#c45c5c', color: '#c45c5c', marginBottom: 16, padding: '12px 16px' }}>{error}</div>
       )}
 
-      {/* INVENTARIO */}
+      {/* INVENTARIO (YA SIN LAS COLUMNAS COBRADO Y POR COBRAR) */}
       <div className="card">
         <div className="section-title mb-4">Inventario</div>
         {perfumes.length === 0 ? (
