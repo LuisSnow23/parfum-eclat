@@ -112,15 +112,17 @@ function authenticateToken(req, res, next) {
 app.use('/api', authenticateToken);
 
 // ============================================================
-// RESUMEN (DASHBOARD)
+// RESUMEN (DASHBOARD) - CORREGIDO PARA SUMAR ABONOS DE LA TABLA abonos
 // ============================================================
 app.get('/api/resumen', async (req, res) => {
   try {
     const { data: perfumes } = await supabase.from('perfumes').select('*');
     const { data: ventas } = await supabase.from('ventas').select('*');
+    const { data: abonos } = await supabase.from('abonos').select('*');
 
     const P = perfumes || [];
     const V = ventas || [];
+    const A = abonos || [];
 
     const vendidasPorPerfume = {};
     V.forEach(v => {
@@ -150,6 +152,7 @@ app.get('/api/resumen', async (req, res) => {
       valor_stock_publico += (Number(p.precio_publico) || 0) * stk;
     });
 
+    // Sumar los abonados de la tabla ventas
     V.forEach(v => {
       const total = Number(v.total_venta) || 0;
       const abonado = Number(v.abonado) || 0;
@@ -162,6 +165,11 @@ app.get('/api/resumen', async (req, res) => {
         const cu = costoUnitario(p);
         ganancia_realizada += abonado - (cu * cantidad);
       }
+    });
+
+    // SUMAR LOS ABONOS DE LA TABLA abonos
+    A.forEach(a => {
+      dinero_en_caja += Number(a.monto) || 0;
     });
 
     res.json({
