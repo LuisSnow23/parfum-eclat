@@ -137,22 +137,24 @@ app.get('/api/resumen', async (req, res) => {
     let capital_invertido = 0;
     let stock = 0;
     let valor_stock_publico = 0;
-    let costo_de_lo_vendido = 0;
+    let total_gastado_proveedores = 0;
+    let total_gastado_envios = 0;
 
-    // Calcular capital, stock y costo de lo vendido
+    // Calcular capital, stock y gastos totales
     P.forEach(p => {
       const cu = costoUnitario(p);
       const compradas = Number(p.piezas_compradas) || 0;
       const vendidas = vendidasPorPerfume[p.id] || 0;
       const stk = Math.max(compradas - vendidas, 0);
 
+      // Gastos acumulados de TODOS los perfumes
+      total_gastado_proveedores += (Number(p.precio_proveedor) || 0) * compradas;
+      total_gastado_envios += Number(p.costo_envio) || 0;
+
       stock += stk;
       capital_en_inventario += cu * stk;
       capital_invertido += cu * compradas;
       valor_stock_publico += (Number(p.precio_publico) || 0) * stk;
-      
-      // Costo de lo que ya se vendió
-      costo_de_lo_vendido += cu * vendidas;
     });
 
     // Calcular cobrado y por cobrar
@@ -164,14 +166,17 @@ app.get('/api/resumen', async (req, res) => {
       por_cobrar += Math.max(total - abonado, 0);
     });
 
-    // Calcular dinero en caja y ganancia realizada
-    const dinero_en_caja = Math.max(0, total_cobrado - costo_de_lo_vendido);
-    const ganancia_realizada = total_cobrado - costo_de_lo_vendido;
+    // DINERO EN CAJA = Total cobrado - Gastos totales
+    const total_gastado = total_gastado_proveedores + total_gastado_envios;
+    const dinero_en_caja = Math.max(0, total_cobrado - total_gastado);
+    const ganancia_realizada = total_cobrado - (total_gastado_proveedores + total_gastado_envios - capital_en_inventario);
 
     res.json({
       dinero_en_caja,
       total_cobrado,
-      costo_de_lo_vendido,
+      total_gastado_proveedores,
+      total_gastado_envios,
+      total_gastado,
       por_cobrar,
       ganancia_realizada,
       capital_en_inventario,
@@ -553,9 +558,6 @@ if (fs.existsSync(distPath)) {
   console.log('Frontend no encontrado, solo API disponible');
 }
 
-// ============================================================
-// ARRANQUE DEL SERVIDOR
-// ============================================================
 app.listen(PORT, '0.0.0.0', () => {
   console.log('Servidor corriendo en puerto ' + PORT);
   console.log('Modo: ' + (process.env.NODE_ENV || 'development'));
