@@ -549,8 +549,6 @@ app.put('/api/caja/saldo', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Saldo invalido. Debe ser un numero mayor o igual a 0' });
     }
 
-    // Aquí no guardamos en Supabase porque el frontend guarda en localStorage
-    // Solo validamos y devolvemos el nuevo saldo
     res.json({ 
       mensaje: 'Saldo actualizado manualmente',
       nuevo_saldo: Number(saldo)
