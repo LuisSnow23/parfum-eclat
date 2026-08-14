@@ -112,7 +112,7 @@ function authenticateToken(req, res, next) {
 app.use('/api', authenticateToken);
 
 // ============================================================
-// RESUMEN (DASHBOARD)
+// RESUMEN (DASHBOARD) - CORREGIDO CON ABONOS
 // ============================================================
 app.get('/api/resumen', async (req, res) => {
   try {
@@ -549,7 +549,7 @@ app.delete('/api/ahorro/movimientos/:id', async (req, res) => {
 });
 
 // ============================================================
-// RUTA PARA EDITAR EL SALDO MANUALMENTE (DESDE EL FRONTEND)
+// RUTA PARA EDITAR EL SALDO MANUALMENTE
 // ============================================================
 app.put('/api/caja/saldo', authenticateToken, async (req, res) => {
   try {
