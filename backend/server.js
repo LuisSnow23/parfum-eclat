@@ -29,34 +29,6 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 console.log('Conectado a Supabase');
 
 // ============================================================
-// CREAR/ACTUALIZAR ADMIN AL INICIAR
-// ============================================================
-async function crearAdminSupabase() {
-  const defaultPass = 'Chichicuilote1*';
-  const hash = bcrypt.hashSync(defaultPass, 10);
-  console.log('Verificando usuario admin...');
-
-  const { data: existing } = await supabase
-    .from('usuarios').select('id').eq('username', 'admin').maybeSingle();
-
-  if (existing) {
-    await supabase.from('usuarios').update({ password_hash: hash }).eq('username', 'admin');
-    console.log('Admin actualizado.');
-    return;
-  }
-
-  const { error } = await supabase
-    .from('usuarios').insert({ username: 'admin', password_hash: hash });
-
-  if (error) {
-    console.log('Error creando admin:', error.message);
-  } else {
-    console.log('Admin creado. Contrasena:', defaultPass);
-  }
-}
-crearAdminSupabase();
-
-// ============================================================
 // FUNCIONES DE CAJA (SALDO)
 // ============================================================
 async function getSaldoCaja() {
@@ -97,6 +69,74 @@ async function actualizarSaldoCaja(nuevoSaldo) {
 }
 
 // ============================================================
+// FUNCION PARA CALCULAR SALDO INICIAL DESDE DATOS EXISTENTES
+// ============================================================
+async function calcularSaldoInicial() {
+  try {
+    // Verificar si ya hay un saldo configurado
+    const { data: saldoExistente } = await supabase
+      .from('caja_saldo')
+      .select('saldo')
+      .eq('id', 1)
+      .maybeSingle();
+    
+    // Si el saldo ya es mayor que 0, no hacer nada
+    if (saldoExistente && saldoExistente.saldo > 0) {
+      console.log('Saldo ya configurado:', saldoExistente.saldo);
+      return;
+    }
+
+    console.log('Calculando saldo inicial desde datos existentes...');
+
+    // Obtener todos los perfumes
+    const { data: perfumes } = await supabase.from('perfumes').select('*');
+    // Obtener todas las ventas
+    const { data: ventas } = await supabase.from('ventas').select('*');
+
+    const P = perfumes || [];
+    const V = ventas || [];
+
+    // 1. Calcular el TOTAL GASTADO en proveedores y envíos
+    let totalGastado = 0;
+    P.forEach(p => {
+      const precioProv = Number(p.precio_proveedor) || 0;
+      const piezas = Number(p.piezas_compradas) || 1;
+      const envio = Number(p.costo_envio) || 0;
+      totalGastado += (precioProv * piezas) + envio;
+    });
+
+    // 2. Calcular el TOTAL COBRADO de todas las ventas
+    let totalCobrado = 0;
+    V.forEach(v => {
+      totalCobrado += Number(v.abonado) || 0;
+    });
+
+    // 3. Calcular el saldo inicial
+    const saldoInicial = Math.max(0, totalCobrado - totalGastado);
+    console.log('Total cobrado:', totalCobrado);
+    console.log('Total gastado:', totalGastado);
+    console.log('Saldo inicial calculado:', saldoInicial);
+
+    // 4. Guardar el saldo en la tabla
+    const { error } = await supabase
+      .from('caja_saldo')
+      .upsert({ 
+        id: 1, 
+        saldo: saldoInicial,
+        actualizado: new Date().toISOString()
+      });
+
+    if (error) {
+      console.error('Error guardando saldo inicial:', error);
+    } else {
+      console.log('Saldo inicial guardado:', saldoInicial);
+    }
+  } catch (error) {
+    console.error('Error calculando saldo inicial:', error);
+  }
+}
+
+// ============================================================
 // FUNCIONES AUXILIARES
 // ============================================================
 function envioUnitario(p) {
@@ -109,6 +149,33 @@ function costoUnitario(p) {
 }
 function gananciaUnitaria(p) {
   return (Number(p.precio_publico) || 0) - costoUnitario(p);
+}
+
+// ============================================================
+// CREAR/ACTUALIZAR ADMIN AL INICIAR
+// ============================================================
+async function crearAdminSupabase() {
+  const defaultPass = 'Chichicuilote1*';
+  const hash = bcrypt.hashSync(defaultPass, 10);
+  console.log('Verificando usuario admin...');
+
+  const { data: existing } = await supabase
+    .from('usuarios').select('id').eq('username', 'admin').maybeSingle();
+
+  if (existing) {
+    await supabase.from('usuarios').update({ password_hash: hash }).eq('username', 'admin');
+    console.log('Admin actualizado.');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('usuarios').insert({ username: 'admin', password_hash: hash });
+
+  if (error) {
+    console.log('Error creando admin:', error.message);
+  } else {
+    console.log('Admin creado. Contrasena:', defaultPass);
+  }
 }
 
 // ============================================================
@@ -291,17 +358,43 @@ app.put('/api/perfumes/:id', async (req, res) => {
     piezas_compradas, costo_envio, piezas_envio, notas
   } = req.body;
 
+  // Obtener el perfume actual para calcular diferencia de gasto
+  const { data: perfumeActual } = await supabase
+    .from('perfumes')
+    .select('precio_proveedor, piezas_compradas, costo_envio')
+    .eq('id', id)
+    .single();
+
+  const precioProvNuevo = Number(precio_proveedor) || 0;
+  const piezasNuevas = Number(piezas_compradas) || 1;
+  const envioNuevo = Number(costo_envio) || 0;
+  const gastoNuevo = (precioProvNuevo * piezasNuevas) + envioNuevo;
+
+  const precioProvViejo = Number(perfumeActual?.precio_proveedor) || 0;
+  const piezasViejas = Number(perfumeActual?.piezas_compradas) || 1;
+  const envioViejo = Number(perfumeActual?.costo_envio) || 0;
+  const gastoViejo = (precioProvViejo * piezasViejas) + envioViejo;
+
   const { data, error } = await supabase.from('perfumes').update({
     nombre, proveedor,
-    precio_proveedor: Number(precio_proveedor) || 0,
+    precio_proveedor: precioProvNuevo,
     precio_publico: Number(precio_publico) || 0,
-    piezas_compradas: Number(piezas_compradas) || 1,
-    costo_envio: Number(costo_envio) || 0,
+    piezas_compradas: piezasNuevas,
+    costo_envio: envioNuevo,
     piezas_envio: Number(piezas_envio) || 1,
     notas
   }).eq('id', id).select();
 
   if (error) return res.status(400).json({ error: error.message });
+
+  // Ajustar el saldo según la diferencia de gasto
+  const diferencia = gastoNuevo - gastoViejo;
+  if (diferencia !== 0) {
+    const saldoActual = await getSaldoCaja();
+    const nuevoSaldo = Math.max(0, saldoActual - diferencia);
+    await actualizarSaldoCaja(nuevoSaldo);
+  }
+
   res.json({ id: data[0].id });
 });
 
@@ -496,9 +589,6 @@ app.post('/api/ventas/:id/abonos', async (req, res) => {
   const nuevoSaldo = saldoActual + montoNum;
   await actualizarSaldoCaja(nuevoSaldo);
 
-  // Actualizar el abonado en la venta
-  await supabase.rpc('actualizar_abonado_venta', { venta_id });
-
   res.json({ id: data[0].id });
 });
 
@@ -535,9 +625,6 @@ app.put('/api/abonos/:id', async (req, res) => {
     const saldoActual = await getSaldoCaja();
     const nuevoSaldo = Math.max(0, saldoActual + diferencia);
     await actualizarSaldoCaja(nuevoSaldo);
-    
-    // Actualizar el abonado en la venta
-    await supabase.rpc('actualizar_abonado_venta', { venta_id: abonoActual.venta_id });
   }
 
   res.json({ id: data[0].id });
@@ -558,34 +645,12 @@ app.delete('/api/abonos/:id', async (req, res) => {
     const saldoActual = await getSaldoCaja();
     const nuevoSaldo = Math.max(0, saldoActual - Number(abono.monto));
     await actualizarSaldoCaja(nuevoSaldo);
-    
-    // Actualizar el abonado en la venta
-    await supabase.rpc('actualizar_abonado_venta', { venta_id: abono.venta_id });
   }
 
   const { error } = await supabase.from('abonos').delete().eq('id', id);
   if (error) return res.status(400).json({ error: error.message });
   res.json({ ok: true });
 });
-
-// ============================================================
-// FUNCION PARA ACTUALIZAR ABONADO EN VENTA (RPC)
-// ============================================================
-// Esta función debe crearse en Supabase SQL Editor:
-/*
-CREATE OR REPLACE FUNCTION actualizar_abonado_venta(venta_id INTEGER)
-RETURNS VOID AS $$
-BEGIN
-  UPDATE ventas 
-  SET abonado = (
-    SELECT COALESCE(SUM(monto), 0) 
-    FROM abonos 
-    WHERE abonos.venta_id = ventas.id
-  )
-  WHERE id = venta_id;
-END;
-$$ LANGUAGE plpgsql;
-*/
 
 // ============================================================
 // FONDO DE SOCIOS (GET, POST, PUT, DELETE)
@@ -724,6 +789,12 @@ if (fs.existsSync(distPath)) {
 } else {
   console.log('Frontend no encontrado, solo API disponible');
 }
+
+// ============================================================
+// INICIALIZAR TODO AL ARRANCAR
+// ============================================================
+crearAdminSupabase();
+calcularSaldoInicial();
 
 // ============================================================
 // ARRANQUE DEL SERVIDOR
