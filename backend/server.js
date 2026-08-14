@@ -26,7 +26,7 @@ const supabaseKey = process.env.SUPABASE_KEY || 'sb_publishable_iXc0eIJjHPRxS1IR
 const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: { autoRefreshToken: false, persistSession: false }
 });
-console.log('Conectado a Supabase con service_role key');
+console.log('Conectado a Supabase');
 
 // ============================================================
 // CREAR/ACTUALIZAR ADMIN AL INICIAR
@@ -112,17 +112,15 @@ function authenticateToken(req, res, next) {
 app.use('/api', authenticateToken);
 
 // ============================================================
-// RESUMEN (DASHBOARD) - CORREGIDO PARA SUMAR ABONOS DE LA TABLA abonos
+// RESUMEN (DASHBOARD) - CORREGIDO
 // ============================================================
 app.get('/api/resumen', async (req, res) => {
   try {
     const { data: perfumes } = await supabase.from('perfumes').select('*');
     const { data: ventas } = await supabase.from('ventas').select('*');
-    const { data: abonos } = await supabase.from('abonos').select('*');
 
     const P = perfumes || [];
     const V = ventas || [];
-    const A = abonos || [];
 
     // Ventas por perfume
     const vendidasPorPerfume = {};
@@ -135,52 +133,45 @@ app.get('/api/resumen', async (req, res) => {
 
     let total_cobrado = 0;
     let por_cobrar = 0;
-    let ganancia_realizada = 0;
     let capital_en_inventario = 0;
     let capital_invertido = 0;
     let stock = 0;
     let valor_stock_publico = 0;
-    let total_gastado_proveedores = 0;
-    let total_gastado_envios = 0;
+    let costo_de_lo_vendido = 0;
 
-    // Calcular gastos y capital
+    // Calcular capital, stock y costo de lo vendido
     P.forEach(p => {
       const cu = costoUnitario(p);
       const compradas = Number(p.piezas_compradas) || 0;
       const vendidas = vendidasPorPerfume[p.id] || 0;
       const stk = Math.max(compradas - vendidas, 0);
 
-      // Gastos acumulados
-      total_gastado_proveedores += (Number(p.precio_proveedor) || 0) * compradas;
-      total_gastado_envios += Number(p.costo_envio) || 0;
-
       stock += stk;
       capital_en_inventario += cu * stk;
       capital_invertido += cu * compradas;
       valor_stock_publico += (Number(p.precio_publico) || 0) * stk;
+      
+      // Costo de lo que ya se vendió
+      costo_de_lo_vendido += cu * vendidas;
     });
 
+    // Calcular cobrado y por cobrar
     V.forEach(v => {
       const total = Number(v.total_venta) || 0;
       const abonado = Number(v.abonado) || 0;
-      const cantidad = Number(v.cantidad) || 0;
       
       total_cobrado += abonado;
       por_cobrar += Math.max(total - abonado, 0);
-
-      const p = P.find(x => x.id === v.perfume_id);
-      if (p) {
-        const cu = costoUnitario(p);
-        ganancia_realizada += abonado - (cu * cantidad);
-      }
     });
 
+    // Calcular dinero en caja y ganancia realizada
+    const dinero_en_caja = Math.max(0, total_cobrado - costo_de_lo_vendido);
+    const ganancia_realizada = total_cobrado - costo_de_lo_vendido;
+
     res.json({
-      dinero_en_caja,                    
-      total_cobrado,                    
-      total_gastado_proveedores,         
-      total_gastado_envios,              
-      total_gastado,                     
+      dinero_en_caja,
+      total_cobrado,
+      costo_de_lo_vendido,
       por_cobrar,
       ganancia_realizada,
       capital_en_inventario,
