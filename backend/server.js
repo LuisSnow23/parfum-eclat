@@ -29,129 +29,6 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 console.log('Conectado a Supabase');
 
 // ============================================================
-// FUNCIONES DE CAJA (SALDO)
-// ============================================================
-async function getSaldoCaja() {
-  const { data, error } = await supabase
-    .from('caja_saldo')
-    .select('saldo')
-    .eq('id', 1)
-    .maybeSingle();
-  
-  if (error) {
-    console.error('Error obteniendo saldo:', error);
-    return 0;
-  }
-  
-  if (!data) {
-    // Si no existe, crearlo con saldo 0
-    await supabase
-      .from('caja_saldo')
-      .insert({ id: 1, saldo: 0 });
-    return 0;
-  }
-  
-  return data.saldo;
-}
-
-async function actualizarSaldoCaja(nuevoSaldo) {
-  const { error } = await supabase
-    .from('caja_saldo')
-    .update({ 
-      saldo: nuevoSaldo,
-      actualizado: new Date().toISOString()
-    })
-    .eq('id', 1);
-  
-  if (error) {
-    console.error('Error actualizando saldo:', error);
-  }
-}
-
-// ============================================================
-// FUNCION PARA CALCULAR SALDO INICIAL DESDE DATOS EXISTENTES
-// ============================================================
-async function calcularSaldoInicial() {
-  try {
-    // Verificar si ya hay un saldo configurado
-    const { data: saldoExistente } = await supabase
-      .from('caja_saldo')
-      .select('saldo')
-      .eq('id', 1)
-      .maybeSingle();
-    
-    // Si el saldo ya es mayor que 0, no hacer nada
-    if (saldoExistente && saldoExistente.saldo > 0) {
-      console.log('Saldo ya configurado:', saldoExistente.saldo);
-      return;
-    }
-
-    console.log('Calculando saldo inicial desde datos existentes...');
-
-    // Obtener todos los perfumes
-    const { data: perfumes } = await supabase.from('perfumes').select('*');
-    // Obtener todas las ventas
-    const { data: ventas } = await supabase.from('ventas').select('*');
-
-    const P = perfumes || [];
-    const V = ventas || [];
-
-    // 1. Calcular el TOTAL GASTADO en proveedores y envíos
-    let totalGastado = 0;
-    P.forEach(p => {
-      const precioProv = Number(p.precio_proveedor) || 0;
-      const piezas = Number(p.piezas_compradas) || 1;
-      const envio = Number(p.costo_envio) || 0;
-      totalGastado += (precioProv * piezas) + envio;
-    });
-
-    // 2. Calcular el TOTAL COBRADO de todas las ventas
-    let totalCobrado = 0;
-    V.forEach(v => {
-      totalCobrado += Number(v.abonado) || 0;
-    });
-
-    // 3. Calcular el saldo inicial
-    const saldoInicial = Math.max(0, totalCobrado - totalGastado);
-    console.log('Total cobrado:', totalCobrado);
-    console.log('Total gastado:', totalGastado);
-    console.log('Saldo inicial calculado:', saldoInicial);
-
-    // 4. Guardar el saldo en la tabla
-    const { error } = await supabase
-      .from('caja_saldo')
-      .upsert({ 
-        id: 1, 
-        saldo: saldoInicial,
-        actualizado: new Date().toISOString()
-      });
-
-    if (error) {
-      console.error('Error guardando saldo inicial:', error);
-    } else {
-      console.log('Saldo inicial guardado:', saldoInicial);
-    }
-  } catch (error) {
-    console.error('Error calculando saldo inicial:', error);
-  }
-}
-
-// ============================================================
-// FUNCIONES AUXILIARES
-// ============================================================
-function envioUnitario(p) {
-  const envio = Number(p.costo_envio) || 0;
-  const n = Math.max(Number(p.piezas_envio) || Number(p.piezas_compradas) || 1, 1);
-  return envio / n;
-}
-function costoUnitario(p) {
-  return (Number(p.precio_proveedor) || 0) + envioUnitario(p);
-}
-function gananciaUnitaria(p) {
-  return (Number(p.precio_publico) || 0) - costoUnitario(p);
-}
-
-// ============================================================
 // CREAR/ACTUALIZAR ADMIN AL INICIAR
 // ============================================================
 async function crearAdminSupabase() {
@@ -176,6 +53,22 @@ async function crearAdminSupabase() {
   } else {
     console.log('Admin creado. Contrasena:', defaultPass);
   }
+}
+crearAdminSupabase();
+
+// ============================================================
+// FUNCIONES AUXILIARES
+// ============================================================
+function envioUnitario(p) {
+  const envio = Number(p.costo_envio) || 0;
+  const n = Math.max(Number(p.piezas_envio) || Number(p.piezas_compradas) || 1, 1);
+  return envio / n;
+}
+function costoUnitario(p) {
+  return (Number(p.precio_proveedor) || 0) + envioUnitario(p);
+}
+function gananciaUnitaria(p) {
+  return (Number(p.precio_publico) || 0) - costoUnitario(p);
 }
 
 // ============================================================
@@ -238,12 +131,15 @@ app.get('/api/resumen', async (req, res) => {
       }
     });
 
+    let dinero_en_caja = 0;
     let por_cobrar = 0;
+    let ganancia_realizada = 0;
     let capital_en_inventario = 0;
     let capital_invertido = 0;
     let stock = 0;
     let valor_stock_publico = 0;
 
+    // Calcular capital y stock
     P.forEach(p => {
       const cu = costoUnitario(p);
       const compradas = Number(p.piezas_compradas) || 0;
@@ -256,19 +152,28 @@ app.get('/api/resumen', async (req, res) => {
       valor_stock_publico += (Number(p.precio_publico) || 0) * stk;
     });
 
-    // Calcular por cobrar
+    // Calcular cobrado y por cobrar
     V.forEach(v => {
       const total = Number(v.total_venta) || 0;
       const abonado = Number(v.abonado) || 0;
+      
+      dinero_en_caja += abonado;
       por_cobrar += Math.max(total - abonado, 0);
     });
 
-    // Obtener el saldo de la tabla caja_saldo
-    const dinero_en_caja = await getSaldoCaja();
+    // Calcular ganancia realizada
+    let costo_de_lo_vendido = 0;
+    P.forEach(p => {
+      const cu = costoUnitario(p);
+      const vendidas = vendidasPorPerfume[p.id] || 0;
+      costo_de_lo_vendido += cu * vendidas;
+    });
+    ganancia_realizada = dinero_en_caja - costo_de_lo_vendido;
 
     res.json({
       dinero_en_caja,
       por_cobrar,
+      ganancia_realizada,
       capital_en_inventario,
       capital_invertido,
       stock,
@@ -326,28 +231,17 @@ app.post('/api/perfumes', async (req, res) => {
 
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
 
-  const precioProv = Number(precio_proveedor) || 0;
-  const piezas = Number(piezas_compradas) || 1;
-  const envio = Number(costo_envio) || 0;
-  const gastoTotal = (precioProv * piezas) + envio;
-
   const { data, error } = await supabase.from('perfumes').insert({
     nombre, proveedor,
-    precio_proveedor: precioProv,
+    precio_proveedor: Number(precio_proveedor) || 0,
     precio_publico: Number(precio_publico) || 0,
-    piezas_compradas: piezas,
-    costo_envio: envio,
+    piezas_compradas: Number(piezas_compradas) || 1,
+    costo_envio: Number(costo_envio) || 0,
     piezas_envio: Number(piezas_envio) || 1,
     notas
   }).select();
 
   if (error) return res.status(400).json({ error: error.message });
-
-  // RESTAR del dinero en caja
-  const saldoActual = await getSaldoCaja();
-  const nuevoSaldo = Math.max(0, saldoActual - gastoTotal);
-  await actualizarSaldoCaja(nuevoSaldo);
-
   res.json({ id: data[0].id });
 });
 
@@ -358,67 +252,24 @@ app.put('/api/perfumes/:id', async (req, res) => {
     piezas_compradas, costo_envio, piezas_envio, notas
   } = req.body;
 
-  // Obtener el perfume actual para calcular diferencia de gasto
-  const { data: perfumeActual } = await supabase
-    .from('perfumes')
-    .select('precio_proveedor, piezas_compradas, costo_envio')
-    .eq('id', id)
-    .single();
-
-  const precioProvNuevo = Number(precio_proveedor) || 0;
-  const piezasNuevas = Number(piezas_compradas) || 1;
-  const envioNuevo = Number(costo_envio) || 0;
-  const gastoNuevo = (precioProvNuevo * piezasNuevas) + envioNuevo;
-
-  const precioProvViejo = Number(perfumeActual?.precio_proveedor) || 0;
-  const piezasViejas = Number(perfumeActual?.piezas_compradas) || 1;
-  const envioViejo = Number(perfumeActual?.costo_envio) || 0;
-  const gastoViejo = (precioProvViejo * piezasViejas) + envioViejo;
-
   const { data, error } = await supabase.from('perfumes').update({
     nombre, proveedor,
-    precio_proveedor: precioProvNuevo,
+    precio_proveedor: Number(precio_proveedor) || 0,
     precio_publico: Number(precio_publico) || 0,
-    piezas_compradas: piezasNuevas,
-    costo_envio: envioNuevo,
+    piezas_compradas: Number(piezas_compradas) || 1,
+    costo_envio: Number(costo_envio) || 0,
     piezas_envio: Number(piezas_envio) || 1,
     notas
   }).eq('id', id).select();
 
   if (error) return res.status(400).json({ error: error.message });
-
-  // Ajustar el saldo según la diferencia de gasto
-  const diferencia = gastoNuevo - gastoViejo;
-  if (diferencia !== 0) {
-    const saldoActual = await getSaldoCaja();
-    const nuevoSaldo = Math.max(0, saldoActual - diferencia);
-    await actualizarSaldoCaja(nuevoSaldo);
-  }
-
   res.json({ id: data[0].id });
 });
 
 app.delete('/api/perfumes/:id', async (req, res) => {
   const { id } = req.params;
-  
-  // Obtener el perfume antes de eliminarlo
-  const { data: perfume } = await supabase
-    .from('perfumes')
-    .select('precio_proveedor, piezas_compradas, costo_envio')
-    .eq('id', id)
-    .single();
-
   const { error } = await supabase.from('perfumes').delete().eq('id', id);
   if (error) return res.status(400).json({ error: error.message });
-  
-  // Si se eliminó, sumar de vuelta al saldo
-  if (perfume) {
-    const gastoTotal = (Number(perfume.precio_proveedor) * Number(perfume.piezas_compradas)) + Number(perfume.costo_envio);
-    const saldoActual = await getSaldoCaja();
-    const nuevoSaldo = saldoActual + gastoTotal;
-    await actualizarSaldoCaja(nuevoSaldo);
-  }
-  
   res.json({ ok: true });
 });
 
@@ -469,30 +320,19 @@ app.post('/api/ventas', async (req, res) => {
     return res.status(400).json({ error: 'Perfume y fecha requeridos' });
   }
 
-  const cantidadNum = Number(cantidad) || 1;
-  const abonadoNum = Number(abonado) || 0;
-
   const { data, error } = await supabase.from('ventas').insert({
     perfume_id,
     cliente,
-    cantidad: cantidadNum,
+    cantidad: Number(cantidad) || 1,
     precio_unitario: Number(precio_unitario) || 0,
     total_venta: Number(total_venta) || 0,
     tipo_pago,
-    abonado: abonadoNum,
+    abonado: Number(abonado) || 0,
     fecha,
     notas
   }).select();
 
   if (error) return res.status(400).json({ error: error.message });
-
-  // SUMAR al dinero en caja (si hay abono)
-  if (abonadoNum > 0) {
-    const saldoActual = await getSaldoCaja();
-    const nuevoSaldo = saldoActual + abonadoNum;
-    await actualizarSaldoCaja(nuevoSaldo);
-  }
-
   res.json({ id: data[0].id });
 });
 
@@ -503,16 +343,6 @@ app.put('/api/ventas/:id', async (req, res) => {
     total_venta, tipo_pago, abonado, fecha, notas
   } = req.body;
 
-  // Obtener la venta actual para saber el abonado anterior
-  const { data: ventaActual } = await supabase
-    .from('ventas')
-    .select('abonado')
-    .eq('id', id)
-    .single();
-
-  const abonadoNum = Number(abonado) || 0;
-  const abonadoAnterior = Number(ventaActual?.abonado) || 0;
-
   const { data, error } = await supabase.from('ventas').update({
     perfume_id,
     cliente,
@@ -520,44 +350,19 @@ app.put('/api/ventas/:id', async (req, res) => {
     precio_unitario: Number(precio_unitario) || 0,
     total_venta: Number(total_venta) || 0,
     tipo_pago,
-    abonado: abonadoNum,
+    abonado: Number(abonado) || 0,
     fecha,
     notas
   }).eq('id', id).select();
 
   if (error) return res.status(400).json({ error: error.message });
-
-  // Ajustar el saldo según la diferencia de abonado
-  const diferencia = abonadoNum - abonadoAnterior;
-  if (diferencia !== 0) {
-    const saldoActual = await getSaldoCaja();
-    const nuevoSaldo = Math.max(0, saldoActual + diferencia);
-    await actualizarSaldoCaja(nuevoSaldo);
-  }
-
   res.json({ id: data[0].id });
 });
 
 app.delete('/api/ventas/:id', async (req, res) => {
   const { id } = req.params;
-  
-  // Obtener la venta antes de eliminarla
-  const { data: venta } = await supabase
-    .from('ventas')
-    .select('abonado')
-    .eq('id', id)
-    .single();
-
   const { error } = await supabase.from('ventas').delete().eq('id', id);
   if (error) return res.status(400).json({ error: error.message });
-
-  // Si tenía abonado, restar del saldo
-  if (venta && venta.abonado > 0) {
-    const saldoActual = await getSaldoCaja();
-    const nuevoSaldo = Math.max(0, saldoActual - Number(venta.abonado));
-    await actualizarSaldoCaja(nuevoSaldo);
-  }
-
   res.json({ ok: true });
 });
 
@@ -573,22 +378,14 @@ app.post('/api/ventas/:id/abonos', async (req, res) => {
   }
   if (!fecha) return res.status(400).json({ error: 'Fecha requerida' });
 
-  const montoNum = Number(monto);
-
   const { data, error } = await supabase.from('abonos').insert({
     venta_id,
-    monto: montoNum,
+    monto: Number(monto),
     fecha,
     notas
   }).select();
 
   if (error) return res.status(400).json({ error: error.message });
-
-  // SUMAR al dinero en caja
-  const saldoActual = await getSaldoCaja();
-  const nuevoSaldo = saldoActual + montoNum;
-  await actualizarSaldoCaja(nuevoSaldo);
-
   res.json({ id: data[0].id });
 });
 
@@ -601,52 +398,18 @@ app.put('/api/abonos/:id', async (req, res) => {
   }
   if (!fecha) return res.status(400).json({ error: 'Fecha requerida' });
 
-  // Obtener el abono actual
-  const { data: abonoActual } = await supabase
-    .from('abonos')
-    .select('monto, venta_id')
-    .eq('id', id)
-    .single();
-
-  const montoNum = Number(monto);
-  const montoAnterior = Number(abonoActual?.monto) || 0;
-
   const { data, error } = await supabase.from('abonos').update({
-    monto: montoNum,
+    monto: Number(monto),
     fecha,
     notas
   }).eq('id', id).select();
 
   if (error) return res.status(400).json({ error: error.message });
-
-  // Ajustar el saldo según la diferencia
-  const diferencia = montoNum - montoAnterior;
-  if (diferencia !== 0 && abonoActual) {
-    const saldoActual = await getSaldoCaja();
-    const nuevoSaldo = Math.max(0, saldoActual + diferencia);
-    await actualizarSaldoCaja(nuevoSaldo);
-  }
-
   res.json({ id: data[0].id });
 });
 
 app.delete('/api/abonos/:id', async (req, res) => {
   const { id } = req.params;
-  
-  // Obtener el monto antes de eliminar
-  const { data: abono } = await supabase
-    .from('abonos')
-    .select('monto, venta_id')
-    .eq('id', id)
-    .single();
-
-  if (abono) {
-    // RESTAR del saldo
-    const saldoActual = await getSaldoCaja();
-    const nuevoSaldo = Math.max(0, saldoActual - Number(abono.monto));
-    await actualizarSaldoCaja(nuevoSaldo);
-  }
-
   const { error } = await supabase.from('abonos').delete().eq('id', id);
   if (error) return res.status(400).json({ error: error.message });
   res.json({ ok: true });
@@ -776,6 +539,29 @@ app.delete('/api/ahorro/movimientos/:id', async (req, res) => {
 });
 
 // ============================================================
+// RUTA PARA EDITAR EL SALDO MANUALMENTE (DESDE EL FRONTEND)
+// ============================================================
+app.put('/api/caja/saldo', authenticateToken, async (req, res) => {
+  try {
+    const { saldo } = req.body;
+    
+    if (saldo === undefined || isNaN(saldo) || saldo < 0) {
+      return res.status(400).json({ error: 'Saldo invalido. Debe ser un numero mayor o igual a 0' });
+    }
+
+    // Aquí no guardamos en Supabase porque el frontend guarda en localStorage
+    // Solo validamos y devolvemos el nuevo saldo
+    res.json({ 
+      mensaje: 'Saldo actualizado manualmente',
+      nuevo_saldo: Number(saldo)
+    });
+  } catch (error) {
+    console.error('Error editando saldo:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
 // SERVIDOR FRONTEND
 // ============================================================
 const distPath = path.join(__dirname, '../frontend/dist');
@@ -789,12 +575,6 @@ if (fs.existsSync(distPath)) {
 } else {
   console.log('Frontend no encontrado, solo API disponible');
 }
-
-// ============================================================
-// INICIALIZAR TODO AL ARRANCAR
-// ============================================================
-crearAdminSupabase();
-calcularSaldoInicial();
 
 // ============================================================
 // ARRANQUE DEL SERVIDOR

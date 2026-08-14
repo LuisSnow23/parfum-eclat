@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Trash2, ShoppingCart, Package, CreditCard, Pencil } from 'lucide-react'
+import { Plus, X, Trash2, ShoppingCart, Package, CreditCard, Pencil, Edit3 } from 'lucide-react'
 import { api, fmt, fmtDate } from '../api'
 
 const hoy = new Date().toISOString().split('T')[0]
@@ -37,6 +37,11 @@ export default function Perfumes() {
   const [perfumeForm, setPerfumeForm] = useState(emptyPerfume)
   const [ventaForm, setVentaForm] = useState(emptyVenta)
   const [abonoForm, setAbonoForm] = useState({ monto: '', fecha: hoy, notas: '' })
+  
+  // Estado para editar el saldo manualmente
+  const [editSaldo, setEditSaldo] = useState(false)
+  const [saldoManual, setSaldoManual] = useState('')
+  const [saldoGuardado, setSaldoGuardado] = useState(null)
 
   const load = async () => {
     const [r, p, v] = await Promise.all([
@@ -47,6 +52,15 @@ export default function Perfumes() {
     setResumen(r)
     setPerfumes(p)
     setVentas(v)
+    
+    // Si hay un saldo guardado en localStorage, usarlo
+    const saldoLocal = localStorage.getItem('dinero_en_caja_manual')
+    if (saldoLocal !== null) {
+      setSaldoGuardado(parseFloat(saldoLocal))
+    } else {
+      // Si no hay saldo guardado, usar el del resumen
+      setSaldoGuardado(r.dinero_en_caja)
+    }
   }
 
   useEffect(() => { load() }, [])
@@ -54,7 +68,6 @@ export default function Perfumes() {
   const sp = (k, v) => setPerfumeForm(f => ({ ...f, [k]: v }))
   const sv = (k, v) => setVentaForm(f => ({ ...f, [k]: v }))
 
-  // Al cambiar piezas compradas, si piezas_envio era igual al valor anterior, sincronizar
   const setPiezas = (val) => {
     const n = parseInt(val, 10) || 1
     setPerfumeForm(f => ({
@@ -73,6 +86,22 @@ export default function Perfumes() {
   const costoU = () => (parseFloat(perfumeForm.precio_proveedor) || 0) + envioU()
   const gananciaU = () => (parseFloat(perfumeForm.precio_publico) || 0) - costoU()
   const totalVenta = () => (parseFloat(ventaForm.precio_unitario) || 0) * (parseInt(ventaForm.cantidad, 10) || 1)
+
+  // Guardar saldo editado manualmente
+  const guardarSaldoManual = () => {
+    const nuevoSaldo = parseFloat(saldoManual)
+    if (isNaN(nuevoSaldo) || nuevoSaldo < 0) {
+      setError('Saldo inválido')
+      return
+    }
+    localStorage.setItem('dinero_en_caja_manual', String(nuevoSaldo))
+    setSaldoGuardado(nuevoSaldo)
+    setEditSaldo(false)
+    setError('')
+    
+    // Actualizar el resumen localmente
+    setResumen(r => ({ ...r, dinero_en_caja: nuevoSaldo }))
+  }
 
   const openEditPerfume = (p) => {
     setError('')
@@ -98,6 +127,18 @@ export default function Perfumes() {
       ? await api.put(`/perfumes/${editId}`, perfumeForm)
       : await api.post('/perfumes', perfumeForm)
     if (res.error) { setError(res.error); return }
+    
+    // Después de agregar un perfume, RESTAR del saldo manual
+    const precioProv = parseFloat(perfumeForm.precio_proveedor) || 0
+    const piezas = parseInt(perfumeForm.piezas_compradas) || 1
+    const envio = parseFloat(perfumeForm.costo_envio) || 0
+    const gasto = (precioProv * piezas) + envio
+    
+    const saldoActual = saldoGuardado || resumen.dinero_en_caja || 0
+    const nuevoSaldo = Math.max(0, saldoActual - gasto)
+    localStorage.setItem('dinero_en_caja_manual', String(nuevoSaldo))
+    setSaldoGuardado(nuevoSaldo)
+    
     await load()
     setModal(null)
     setEditId(null)
@@ -180,8 +221,10 @@ export default function Perfumes() {
     return <div className="flex-center" style={{ height: 280, color: 'var(--cream-dim)' }}>Cargando...</div>
   }
 
-  // Cálculo del Total por cobrar sumando los 'resto' de todas las ventas
-  const totalPorCobrarGlobal = ventas.reduce((acc, venta) => acc + (venta.resto || 0), 0);
+  const totalPorCobrarGlobal = ventas.reduce((acc, venta) => acc + (venta.resto || 0), 0)
+  
+  // Mostrar el saldo guardado o el del resumen
+  const dineroMostrado = saldoGuardado !== null ? saldoGuardado : resumen.dinero_en_caja
 
   return (
     <div>
@@ -208,12 +251,50 @@ export default function Perfumes() {
         </div>
       </div>
 
-      {/* CONTROL DE DINERO */}
       <div className="stats-grid">
-        <Kpi label="Dinero en caja (cobrado)" value={fmt(resumen.dinero_en_caja)} color="#4a8c6a" />
-        {/* REEMPLAZAMOS LA TARJETA DE POR COBRAR POR LA SUMA DE RESTAS */}
+        {/* Tarjeta de Dinero en caja con botón de edición */}
+        <div className="stat-card" style={{ position: 'relative' }}>
+          <div className="label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            Dinero en caja (cobrado)
+            <button 
+              className="btn-icon" 
+              onClick={() => {
+                setEditSaldo(true)
+                setSaldoManual(String(dineroMostrado))
+              }}
+              title="Editar saldo manualmente"
+            >
+              <Edit3 size={14} />
+            </button>
+          </div>
+          {editSaldo ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+              <input
+                type="number"
+                className="form-input"
+                value={saldoManual}
+                onChange={e => setSaldoManual(e.target.value)}
+                style={{ width: 120, padding: '4px 8px', fontSize: '1rem' }}
+                autoFocus
+              />
+              <button className="btn btn-gold" onClick={guardarSaldoManual} style={{ padding: '4px 12px', fontSize: '0.8rem' }}>
+                Guardar
+              </button>
+              <button className="btn btn-outline" onClick={() => setEditSaldo(false)} style={{ padding: '4px 12px', fontSize: '0.8rem' }}>
+                Cancelar
+              </button>
+            </div>
+          ) : (
+            <div className="stat-value" style={{ color: '#4a8c6a', fontSize: '1.15rem' }}>{fmt(dineroMostrado)}</div>
+          )}
+          {saldoGuardado !== null && !editSaldo && (
+            <div style={{ fontSize: '0.6rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+              * Saldo manual
+            </div>
+          )}
+        </div>
+        
         <Kpi label="Por cobrar (de ventas)" value={fmt(totalPorCobrarGlobal)} color="#c9a84c" />
-        <Kpi label="Ganancia realizada" value={fmt(resumen.ganancia_realizada)} color={resumen.ganancia_realizada >= 0 ? '#4a8c6a' : '#c45c5c'} />
         <Kpi label="Capital en inventario" value={fmt(resumen.capital_en_inventario)} />
         <Kpi label="Capital total invertido" value={fmt(resumen.capital_invertido)} />
         <Kpi label="Stock (piezas)" value={`${resumen.stock}`} />
@@ -222,17 +303,16 @@ export default function Perfumes() {
 
       <div className="card" style={{ marginBottom: 16, padding: '14px 18px', fontSize: '0.8rem', color: 'var(--cream-dim)', lineHeight: 1.6 }}>
         <strong style={{ color: 'var(--gold)' }}>Cómo leer los números:</strong>{' '}
-        <em>Dinero en caja</em> = lo que ya te pagaron los clientes.{' '}
-        <em>Por cobrar</em> = Suma de los saldos restantes de TODAS las ventas.{' '}
-        <em>Capital en inventario</em> = lo que te costó lo que aún no vendes.{' '}
-        <em>Ganancia realizada</em> = cobrado − costo de lo ya vendido.
+        <em>Dinero en caja</em> = lo que ya te pagaron los clientes, <strong>puedes editarlo manualmente</strong> si gastas dinero en nuevos perfumes.<br/>
+        <em>Por cobrar</em> = Suma de los saldos restantes de TODAS las ventas.<br/>
+        <em>Capital en inventario</em> = lo que te costó lo que aún no vendes.
       </div>
 
       {error && !modal && (
         <div className="card" style={{ borderColor: '#c45c5c', color: '#c45c5c', marginBottom: 16, padding: '12px 16px' }}>{error}</div>
       )}
 
-      {/* INVENTARIO (YA SIN LAS COLUMNAS COBRADO Y POR COBRAR) */}
+      {/* INVENTARIO */}
       <div className="card">
         <div className="section-title mb-4">Inventario</div>
         {perfumes.length === 0 ? (
