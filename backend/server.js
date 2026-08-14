@@ -26,7 +26,7 @@ const supabaseKey = process.env.SUPABASE_KEY || 'sb_publishable_iXc0eIJjHPRxS1IR
 const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: { autoRefreshToken: false, persistSession: false }
 });
-console.log('Conectado a Supabase con service_role key');
+console.log('Conectado a Supabase');
 
 // ============================================================
 // CREAR/ACTUALIZAR ADMIN AL INICIAR
@@ -55,6 +55,46 @@ async function crearAdminSupabase() {
   }
 }
 crearAdminSupabase();
+
+// ============================================================
+// FUNCIONES DE CAJA (SALDO)
+// ============================================================
+async function getSaldoCaja() {
+  const { data, error } = await supabase
+    .from('caja_saldo')
+    .select('saldo')
+    .eq('id', 1)
+    .maybeSingle();
+  
+  if (error) {
+    console.error('Error obteniendo saldo:', error);
+    return 0;
+  }
+  
+  if (!data) {
+    // Si no existe, crearlo con saldo 0
+    await supabase
+      .from('caja_saldo')
+      .insert({ id: 1, saldo: 0 });
+    return 0;
+  }
+  
+  return data.saldo;
+}
+
+async function actualizarSaldoCaja(nuevoSaldo) {
+  const { error } = await supabase
+    .from('caja_saldo')
+    .update({ 
+      saldo: nuevoSaldo,
+      actualizado: new Date().toISOString()
+    })
+    .eq('id', 1);
+  
+  if (error) {
+    console.error('Error actualizando saldo:', error);
+  }
+}
 
 // ============================================================
 // FUNCIONES AUXILIARES
@@ -122,6 +162,7 @@ app.get('/api/resumen', async (req, res) => {
     const P = perfumes || [];
     const V = ventas || [];
 
+    // Ventas por perfume
     const vendidasPorPerfume = {};
     V.forEach(v => {
       if (v.perfume_id) {
@@ -130,9 +171,7 @@ app.get('/api/resumen', async (req, res) => {
       }
     });
 
-    let dinero_en_caja = 0;
     let por_cobrar = 0;
-    let ganancia_realizada = 0;
     let capital_en_inventario = 0;
     let capital_invertido = 0;
     let stock = 0;
@@ -150,24 +189,19 @@ app.get('/api/resumen', async (req, res) => {
       valor_stock_publico += (Number(p.precio_publico) || 0) * stk;
     });
 
+    // Calcular por cobrar
     V.forEach(v => {
       const total = Number(v.total_venta) || 0;
       const abonado = Number(v.abonado) || 0;
-      const cantidad = Number(v.cantidad) || 0;
-      dinero_en_caja += abonado;
       por_cobrar += Math.max(total - abonado, 0);
-
-      const p = P.find(x => x.id === v.perfume_id);
-      if (p) {
-        const cu = costoUnitario(p);
-        ganancia_realizada += abonado - (cu * cantidad);
-      }
     });
+
+    // Obtener el saldo de la tabla caja_saldo
+    const dinero_en_caja = await getSaldoCaja();
 
     res.json({
       dinero_en_caja,
       por_cobrar,
-      ganancia_realizada,
       capital_en_inventario,
       capital_invertido,
       stock,
@@ -225,17 +259,28 @@ app.post('/api/perfumes', async (req, res) => {
 
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
 
+  const precioProv = Number(precio_proveedor) || 0;
+  const piezas = Number(piezas_compradas) || 1;
+  const envio = Number(costo_envio) || 0;
+  const gastoTotal = (precioProv * piezas) + envio;
+
   const { data, error } = await supabase.from('perfumes').insert({
     nombre, proveedor,
-    precio_proveedor: Number(precio_proveedor) || 0,
+    precio_proveedor: precioProv,
     precio_publico: Number(precio_publico) || 0,
-    piezas_compradas: Number(piezas_compradas) || 1,
-    costo_envio: Number(costo_envio) || 0,
+    piezas_compradas: piezas,
+    costo_envio: envio,
     piezas_envio: Number(piezas_envio) || 1,
     notas
   }).select();
 
   if (error) return res.status(400).json({ error: error.message });
+
+  // RESTAR del dinero en caja
+  const saldoActual = await getSaldoCaja();
+  const nuevoSaldo = Math.max(0, saldoActual - gastoTotal);
+  await actualizarSaldoCaja(nuevoSaldo);
+
   res.json({ id: data[0].id });
 });
 
@@ -262,8 +307,25 @@ app.put('/api/perfumes/:id', async (req, res) => {
 
 app.delete('/api/perfumes/:id', async (req, res) => {
   const { id } = req.params;
+  
+  // Obtener el perfume antes de eliminarlo
+  const { data: perfume } = await supabase
+    .from('perfumes')
+    .select('precio_proveedor, piezas_compradas, costo_envio')
+    .eq('id', id)
+    .single();
+
   const { error } = await supabase.from('perfumes').delete().eq('id', id);
   if (error) return res.status(400).json({ error: error.message });
+  
+  // Si se eliminó, sumar de vuelta al saldo
+  if (perfume) {
+    const gastoTotal = (Number(perfume.precio_proveedor) * Number(perfume.piezas_compradas)) + Number(perfume.costo_envio);
+    const saldoActual = await getSaldoCaja();
+    const nuevoSaldo = saldoActual + gastoTotal;
+    await actualizarSaldoCaja(nuevoSaldo);
+  }
+  
   res.json({ ok: true });
 });
 
@@ -314,19 +376,30 @@ app.post('/api/ventas', async (req, res) => {
     return res.status(400).json({ error: 'Perfume y fecha requeridos' });
   }
 
+  const cantidadNum = Number(cantidad) || 1;
+  const abonadoNum = Number(abonado) || 0;
+
   const { data, error } = await supabase.from('ventas').insert({
     perfume_id,
     cliente,
-    cantidad: Number(cantidad) || 1,
+    cantidad: cantidadNum,
     precio_unitario: Number(precio_unitario) || 0,
     total_venta: Number(total_venta) || 0,
     tipo_pago,
-    abonado: Number(abonado) || 0,
+    abonado: abonadoNum,
     fecha,
     notas
   }).select();
 
   if (error) return res.status(400).json({ error: error.message });
+
+  // SUMAR al dinero en caja (si hay abono)
+  if (abonadoNum > 0) {
+    const saldoActual = await getSaldoCaja();
+    const nuevoSaldo = saldoActual + abonadoNum;
+    await actualizarSaldoCaja(nuevoSaldo);
+  }
+
   res.json({ id: data[0].id });
 });
 
@@ -337,6 +410,16 @@ app.put('/api/ventas/:id', async (req, res) => {
     total_venta, tipo_pago, abonado, fecha, notas
   } = req.body;
 
+  // Obtener la venta actual para saber el abonado anterior
+  const { data: ventaActual } = await supabase
+    .from('ventas')
+    .select('abonado')
+    .eq('id', id)
+    .single();
+
+  const abonadoNum = Number(abonado) || 0;
+  const abonadoAnterior = Number(ventaActual?.abonado) || 0;
+
   const { data, error } = await supabase.from('ventas').update({
     perfume_id,
     cliente,
@@ -344,19 +427,44 @@ app.put('/api/ventas/:id', async (req, res) => {
     precio_unitario: Number(precio_unitario) || 0,
     total_venta: Number(total_venta) || 0,
     tipo_pago,
-    abonado: Number(abonado) || 0,
+    abonado: abonadoNum,
     fecha,
     notas
   }).eq('id', id).select();
 
   if (error) return res.status(400).json({ error: error.message });
+
+  // Ajustar el saldo según la diferencia de abonado
+  const diferencia = abonadoNum - abonadoAnterior;
+  if (diferencia !== 0) {
+    const saldoActual = await getSaldoCaja();
+    const nuevoSaldo = Math.max(0, saldoActual + diferencia);
+    await actualizarSaldoCaja(nuevoSaldo);
+  }
+
   res.json({ id: data[0].id });
 });
 
 app.delete('/api/ventas/:id', async (req, res) => {
   const { id } = req.params;
+  
+  // Obtener la venta antes de eliminarla
+  const { data: venta } = await supabase
+    .from('ventas')
+    .select('abonado')
+    .eq('id', id)
+    .single();
+
   const { error } = await supabase.from('ventas').delete().eq('id', id);
   if (error) return res.status(400).json({ error: error.message });
+
+  // Si tenía abonado, restar del saldo
+  if (venta && venta.abonado > 0) {
+    const saldoActual = await getSaldoCaja();
+    const nuevoSaldo = Math.max(0, saldoActual - Number(venta.abonado));
+    await actualizarSaldoCaja(nuevoSaldo);
+  }
+
   res.json({ ok: true });
 });
 
@@ -372,14 +480,25 @@ app.post('/api/ventas/:id/abonos', async (req, res) => {
   }
   if (!fecha) return res.status(400).json({ error: 'Fecha requerida' });
 
+  const montoNum = Number(monto);
+
   const { data, error } = await supabase.from('abonos').insert({
     venta_id,
-    monto: Number(monto),
+    monto: montoNum,
     fecha,
     notas
   }).select();
 
   if (error) return res.status(400).json({ error: error.message });
+
+  // SUMAR al dinero en caja
+  const saldoActual = await getSaldoCaja();
+  const nuevoSaldo = saldoActual + montoNum;
+  await actualizarSaldoCaja(nuevoSaldo);
+
+  // Actualizar el abonado en la venta
+  await supabase.rpc('actualizar_abonado_venta', { venta_id });
+
   res.json({ id: data[0].id });
 });
 
@@ -392,22 +511,81 @@ app.put('/api/abonos/:id', async (req, res) => {
   }
   if (!fecha) return res.status(400).json({ error: 'Fecha requerida' });
 
+  // Obtener el abono actual
+  const { data: abonoActual } = await supabase
+    .from('abonos')
+    .select('monto, venta_id')
+    .eq('id', id)
+    .single();
+
+  const montoNum = Number(monto);
+  const montoAnterior = Number(abonoActual?.monto) || 0;
+
   const { data, error } = await supabase.from('abonos').update({
-    monto: Number(monto),
+    monto: montoNum,
     fecha,
     notas
   }).eq('id', id).select();
 
   if (error) return res.status(400).json({ error: error.message });
+
+  // Ajustar el saldo según la diferencia
+  const diferencia = montoNum - montoAnterior;
+  if (diferencia !== 0 && abonoActual) {
+    const saldoActual = await getSaldoCaja();
+    const nuevoSaldo = Math.max(0, saldoActual + diferencia);
+    await actualizarSaldoCaja(nuevoSaldo);
+    
+    // Actualizar el abonado en la venta
+    await supabase.rpc('actualizar_abonado_venta', { venta_id: abonoActual.venta_id });
+  }
+
   res.json({ id: data[0].id });
 });
 
 app.delete('/api/abonos/:id', async (req, res) => {
   const { id } = req.params;
+  
+  // Obtener el monto antes de eliminar
+  const { data: abono } = await supabase
+    .from('abonos')
+    .select('monto, venta_id')
+    .eq('id', id)
+    .single();
+
+  if (abono) {
+    // RESTAR del saldo
+    const saldoActual = await getSaldoCaja();
+    const nuevoSaldo = Math.max(0, saldoActual - Number(abono.monto));
+    await actualizarSaldoCaja(nuevoSaldo);
+    
+    // Actualizar el abonado en la venta
+    await supabase.rpc('actualizar_abonado_venta', { venta_id: abono.venta_id });
+  }
+
   const { error } = await supabase.from('abonos').delete().eq('id', id);
   if (error) return res.status(400).json({ error: error.message });
   res.json({ ok: true });
 });
+
+// ============================================================
+// FUNCION PARA ACTUALIZAR ABONADO EN VENTA (RPC)
+// ============================================================
+// Esta función debe crearse en Supabase SQL Editor:
+/*
+CREATE OR REPLACE FUNCTION actualizar_abonado_venta(venta_id INTEGER)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE ventas 
+  SET abonado = (
+    SELECT COALESCE(SUM(monto), 0) 
+    FROM abonos 
+    WHERE abonos.venta_id = ventas.id
+  )
+  WHERE id = venta_id;
+END;
+$$ LANGUAGE plpgsql;
+*/
 
 // ============================================================
 // FONDO DE SOCIOS (GET, POST, PUT, DELETE)
