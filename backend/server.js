@@ -122,6 +122,7 @@ app.get('/api/resumen', async (req, res) => {
     const P = perfumes || [];
     const V = ventas || [];
 
+    // Ventas por perfume
     const vendidasPorPerfume = {};
     V.forEach(v => {
       if (v.perfume_id) {
@@ -130,19 +131,26 @@ app.get('/api/resumen', async (req, res) => {
       }
     });
 
-    let dinero_en_caja = 0;
+    let total_cobrado = 0;
     let por_cobrar = 0;
     let ganancia_realizada = 0;
     let capital_en_inventario = 0;
     let capital_invertido = 0;
     let stock = 0;
     let valor_stock_publico = 0;
+    let total_gastado_proveedores = 0;
+    let total_gastado_envios = 0;
 
+    // Calcular gastos y capital
     P.forEach(p => {
       const cu = costoUnitario(p);
       const compradas = Number(p.piezas_compradas) || 0;
       const vendidas = vendidasPorPerfume[p.id] || 0;
       const stk = Math.max(compradas - vendidas, 0);
+
+      // Gastos acumulados
+      total_gastado_proveedores += (Number(p.precio_proveedor) || 0) * compradas;
+      total_gastado_envios += Number(p.costo_envio) || 0;
 
       stock += stk;
       capital_en_inventario += cu * stk;
@@ -150,11 +158,13 @@ app.get('/api/resumen', async (req, res) => {
       valor_stock_publico += (Number(p.precio_publico) || 0) * stk;
     });
 
+    // Calcular cobrado y por cobrar
     V.forEach(v => {
       const total = Number(v.total_venta) || 0;
       const abonado = Number(v.abonado) || 0;
       const cantidad = Number(v.cantidad) || 0;
-      dinero_en_caja += abonado;
+      
+      total_cobrado += abonado;
       por_cobrar += Math.max(total - abonado, 0);
 
       const p = P.find(x => x.id === v.perfume_id);
@@ -164,8 +174,15 @@ app.get('/api/resumen', async (req, res) => {
       }
     });
 
+    const total_gastado = total_gastado_proveedores + total_gastado_envios;
+    const dinero_en_caja = Math.max(0, total_cobrado - total_gastado);
+
     res.json({
-      dinero_en_caja,
+      dinero_en_caja,                    
+      total_cobrado,                    
+      total_gastado_proveedores,         
+      total_gastado_envios,              
+      total_gastado,                     
       por_cobrar,
       ganancia_realizada,
       capital_en_inventario,
