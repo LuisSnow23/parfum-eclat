@@ -26,7 +26,7 @@ const supabaseKey = process.env.SUPABASE_KEY || 'sb_publishable_iXc0eIJjHPRxS1IR
 const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: { autoRefreshToken: false, persistSession: false }
 });
-console.log('Conectado a Supabase');
+console.log('Conectado a Supabase con service_role key');
 
 // ============================================================
 // CREAR/ACTUALIZAR ADMIN AL INICIAR
@@ -112,7 +112,7 @@ function authenticateToken(req, res, next) {
 app.use('/api', authenticateToken);
 
 // ============================================================
-// RESUMEN (DASHBOARD) - CORREGIDO
+// RESUMEN (DASHBOARD)
 // ============================================================
 app.get('/api/resumen', async (req, res) => {
   try {
@@ -122,7 +122,6 @@ app.get('/api/resumen', async (req, res) => {
     const P = perfumes || [];
     const V = ventas || [];
 
-    // Ventas por perfume
     const vendidasPorPerfume = {};
     V.forEach(v => {
       if (v.perfume_id) {
@@ -131,25 +130,19 @@ app.get('/api/resumen', async (req, res) => {
       }
     });
 
-    let total_cobrado = 0;
+    let dinero_en_caja = 0;
     let por_cobrar = 0;
+    let ganancia_realizada = 0;
     let capital_en_inventario = 0;
     let capital_invertido = 0;
     let stock = 0;
     let valor_stock_publico = 0;
-    let total_gastado_proveedores = 0;
-    let total_gastado_envios = 0;
 
-    // Calcular capital, stock y gastos totales
     P.forEach(p => {
       const cu = costoUnitario(p);
       const compradas = Number(p.piezas_compradas) || 0;
       const vendidas = vendidasPorPerfume[p.id] || 0;
       const stk = Math.max(compradas - vendidas, 0);
-
-      // Gastos acumulados de TODOS los perfumes
-      total_gastado_proveedores += (Number(p.precio_proveedor) || 0) * compradas;
-      total_gastado_envios += Number(p.costo_envio) || 0;
 
       stock += stk;
       capital_en_inventario += cu * stk;
@@ -157,26 +150,22 @@ app.get('/api/resumen', async (req, res) => {
       valor_stock_publico += (Number(p.precio_publico) || 0) * stk;
     });
 
-    // Calcular cobrado y por cobrar
     V.forEach(v => {
       const total = Number(v.total_venta) || 0;
       const abonado = Number(v.abonado) || 0;
-      
-      total_cobrado += abonado;
+      const cantidad = Number(v.cantidad) || 0;
+      dinero_en_caja += abonado;
       por_cobrar += Math.max(total - abonado, 0);
-    });
 
-    // DINERO EN CAJA = Total cobrado - Gastos totales
-    const total_gastado = total_gastado_proveedores + total_gastado_envios;
-    const dinero_en_caja = Math.max(0, total_cobrado - total_gastado);
-    const ganancia_realizada = total_cobrado - (total_gastado_proveedores + total_gastado_envios - capital_en_inventario);
+      const p = P.find(x => x.id === v.perfume_id);
+      if (p) {
+        const cu = costoUnitario(p);
+        ganancia_realizada += abonado - (cu * cantidad);
+      }
+    });
 
     res.json({
       dinero_en_caja,
-      total_cobrado,
-      total_gastado_proveedores,
-      total_gastado_envios,
-      total_gastado,
       por_cobrar,
       ganancia_realizada,
       capital_en_inventario,
@@ -558,6 +547,9 @@ if (fs.existsSync(distPath)) {
   console.log('Frontend no encontrado, solo API disponible');
 }
 
+// ============================================================
+// ARRANQUE DEL SERVIDOR
+// ============================================================
 app.listen(PORT, '0.0.0.0', () => {
   console.log('Servidor corriendo en puerto ' + PORT);
   console.log('Modo: ' + (process.env.NODE_ENV || 'development'));
