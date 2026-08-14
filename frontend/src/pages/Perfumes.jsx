@@ -52,11 +52,12 @@ export default function Perfumes() {
     setPerfumes(p)
     setVentas(v)
     
+    // SOLO usar localStorage si existe, si no, usar el valor del servidor
     const saldoLocal = localStorage.getItem('dinero_en_caja_manual')
     if (saldoLocal !== null) {
       setSaldoGuardado(parseFloat(saldoLocal))
     } else {
-      setSaldoGuardado(r.dinero_en_caja)
+      setSaldoGuardado(null) // 👈 CAMBIO: usar null para que muestre el del servidor
     }
   }
 
@@ -127,7 +128,7 @@ export default function Perfumes() {
     const envio = parseFloat(perfumeForm.costo_envio) || 0
     const gasto = (precioProv * piezas) + envio
     
-    const saldoActual = saldoGuardado || resumen.dinero_en_caja || 0
+    const saldoActual = saldoGuardado !== null ? saldoGuardado : (resumen?.dinero_en_caja || 0)
     const nuevoSaldo = Math.max(0, saldoActual - gasto)
     localStorage.setItem('dinero_en_caja_manual', String(nuevoSaldo))
     setSaldoGuardado(nuevoSaldo)
@@ -215,6 +216,7 @@ export default function Perfumes() {
   }
 
   const totalPorCobrarGlobal = ventas.reduce((acc, venta) => acc + (venta.resto || 0), 0)
+  // 👈 CAMBIO: si saldoGuardado es null, usar el del servidor
   const dineroMostrado = saldoGuardado !== null ? saldoGuardado : resumen.dinero_en_caja
 
   return (
@@ -243,7 +245,7 @@ export default function Perfumes() {
       </div>
 
       <div className="stats-grid">
-        {/* Tarjeta de Dinero en caja con botón de edición - CORREGIDA */}
+        {/* Tarjeta de Dinero en caja con botón de edición */}
         <div className="stat-card" style={{ position: 'relative' }}>
           <div className="label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Dinero en caja (cobrado)</span>
