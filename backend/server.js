@@ -118,6 +118,7 @@ app.get('/api/resumen', async (req, res) => {
   try {
     const { data: perfumes } = await supabase.from('perfumes').select('*');
     const { data: ventas } = await supabase.from('ventas').select('*');
+    const { data: abonos } = await supabase.from('abonos').select('*');
 
     const P = perfumes || [];
     const V = ventas || [];
@@ -133,7 +134,6 @@ app.get('/api/resumen', async (req, res) => {
 
     let dinero_en_caja = 0;
     let por_cobrar = 0;
-    let ganancia_realizada = 0;
     let capital_en_inventario = 0;
     let capital_invertido = 0;
     let stock = 0;
@@ -152,13 +152,23 @@ app.get('/api/resumen', async (req, res) => {
       valor_stock_publico += (Number(p.precio_publico) || 0) * stk;
     });
 
-    // Calcular cobrado y por cobrar
+    // Crear mapa de abonos por venta
+    const abonosPorVenta = {};
+    (abonos || []).forEach(a => {
+      if (a.venta_id) {
+        abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
+      }
+    });
+
+    // Calcular cobrado y por cobrar (sumando abonos)
     V.forEach(v => {
       const total = Number(v.total_venta) || 0;
-      const abonado = Number(v.abonado) || 0;
+      const abonadoInicial = Number(v.abonado) || 0;
+      const abonosExtra = abonosPorVenta[v.id] || 0;
+      const abonadoTotal = abonadoInicial + abonosExtra;
       
-      dinero_en_caja += abonado;
-      por_cobrar += Math.max(total - abonado, 0);
+      dinero_en_caja += abonadoTotal;
+      por_cobrar += Math.max(total - abonadoTotal, 0);
     });
 
     // Calcular ganancia realizada
@@ -168,7 +178,7 @@ app.get('/api/resumen', async (req, res) => {
       const vendidas = vendidasPorPerfume[p.id] || 0;
       costo_de_lo_vendido += cu * vendidas;
     });
-    ganancia_realizada = dinero_en_caja - costo_de_lo_vendido;
+    const ganancia_realizada = dinero_en_caja - costo_de_lo_vendido;
 
     res.json({
       dinero_en_caja,
