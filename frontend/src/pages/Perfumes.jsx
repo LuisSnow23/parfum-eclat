@@ -52,12 +52,11 @@ export default function Perfumes() {
     setPerfumes(p)
     setVentas(v)
     
-    // SOLO usar localStorage si existe, si no, usar el valor del servidor
     const saldoLocal = localStorage.getItem('dinero_en_caja_manual')
     if (saldoLocal !== null) {
       setSaldoGuardado(parseFloat(saldoLocal))
     } else {
-      setSaldoGuardado(null) // 👈 CAMBIO: usar null para que muestre el del servidor
+      setSaldoGuardado(null)
     }
   }
 
@@ -123,15 +122,8 @@ export default function Perfumes() {
       : await api.post('/perfumes', perfumeForm)
     if (res.error) { setError(res.error); return }
     
-    const precioProv = parseFloat(perfumeForm.precio_proveedor) || 0
-    const piezas = parseInt(perfumeForm.piezas_compradas) || 1
-    const envio = parseFloat(perfumeForm.costo_envio) || 0
-    const gasto = (precioProv * piezas) + envio
-    
-    const saldoActual = saldoGuardado !== null ? saldoGuardado : (resumen?.dinero_en_caja || 0)
-    const nuevoSaldo = Math.max(0, saldoActual - gasto)
-    localStorage.setItem('dinero_en_caja_manual', String(nuevoSaldo))
-    setSaldoGuardado(nuevoSaldo)
+    // ✅ NO RESTAMOS NADA AUTOMÁTICAMENTE
+    // El usuario editará el saldo manualmente si gastó dinero
     
     await load()
     setModal(null)
@@ -216,7 +208,6 @@ export default function Perfumes() {
   }
 
   const totalPorCobrarGlobal = ventas.reduce((acc, venta) => acc + (venta.resto || 0), 0)
-  // 👈 CAMBIO: si saldoGuardado es null, usar el del servidor
   const dineroMostrado = saldoGuardado !== null ? saldoGuardado : resumen.dinero_en_caja
 
   return (
