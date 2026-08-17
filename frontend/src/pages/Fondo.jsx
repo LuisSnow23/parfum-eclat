@@ -140,13 +140,6 @@ export default function Fondo() {
         </div>
       </div>
 
-      {/* MENSAJE DE "TE SOBRA / TE FALTA" */}
-      <div className="card" style={{ 
-        marginBottom: 24, 
-        padding: '18px 24px',
-        borderColor: saldoActual < 0 ? '#c45c5c' : '#4a8c6a',
-        borderWidth: '2px'
-      }}>
       {/* INFO DE DISPONIBILIDAD EN CAJA */}
       {resumen && (
         <div className="card" style={{ 
