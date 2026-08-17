@@ -112,23 +112,17 @@ function authenticateToken(req, res, next) {
 app.use('/api', authenticateToken);
 
 // ============================================================
-// RESUMEN (DASHBOARD) - CON CHECKPOINT DE SALDO MANUAL
+// RESUMEN (DASHBOARD) - CORREGIDO CON FONDO DE SOCIOS
 // ============================================================
 app.get('/api/resumen', async (req, res) => {
   try {
     const { data: perfumes } = await supabase.from('perfumes').select('*');
     const { data: ventas } = await supabase.from('ventas').select('*');
     const { data: abonos } = await supabase.from('abonos').select('*');
-    const { data: cajaConfig } = await supabase
-      .from('caja_config').select('*').eq('id', 1).maybeSingle();
+    const { data: fondoMovimientos } = await supabase.from('fondo_movimientos').select('*');
 
     const P = perfumes || [];
     const V = ventas || [];
-    const A = abonos || [];
-
-    // Checkpoint manual: si no existe, se comporta como si fuera "desde siempre"
-    const saldoBase = cajaConfig ? Number(cajaConfig.saldo_base) || 0 : 0;
-    const fechaAjuste = cajaConfig ? new Date(cajaConfig.fecha_ajuste) : new Date(0);
 
     // Ventas por perfume
     const vendidasPorPerfume = {};
@@ -138,6 +132,30 @@ app.get('/api/resumen', async (req, res) => {
           (vendidasPorPerfume[v.perfume_id] || 0) + (Number(v.cantidad) || 0);
       }
     });
+
+    // Crear mapa de abonos por venta
+    const abonosPorVenta = {};
+    (abonos || []).forEach(a => {
+      if (a.venta_id) {
+        abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
+      }
+    });
+
+    // Calcular total cobrado de ventas (suma de todos los abonos)
+    let totalCobradoVentas = 0;
+    V.forEach(v => {
+      const abonadoInicial = Number(v.abonado) || 0;
+      const abonosExtra = abonosPorVenta[v.id] || 0;
+      totalCobradoVentas += abonadoInicial + abonosExtra;
+    });
+
+    // Calcular total retirado del fondo (solo retiros)
+    const totalRetiradoFondo = (fondoMovimientos || [])
+      .filter(m => m.tipo === 'retiro')
+      .reduce((sum, m) => sum + Number(m.monto), 0);
+
+    // DINERO EN CAJA = Cobrado de ventas - Retirado del fondo
+    const dinero_en_caja = Math.max(totalCobradoVentas - totalRetiradoFondo, 0);
 
     let por_cobrar = 0;
     let capital_en_inventario = 0;
@@ -158,55 +176,23 @@ app.get('/api/resumen', async (req, res) => {
       valor_stock_publico += (Number(p.precio_publico) || 0) * stk;
     });
 
-    // Mapa de abonos extra por venta
-    const abonosPorVenta = {};
-    A.forEach(a => {
-      if (a.venta_id) {
-        abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
-      }
-    });
-
-    // --- DINERO EN CAJA: saldo base + solo lo cobrado DESPUES del checkpoint ---
-    let dinero_en_caja = saldoBase;
-
-    // Abonos iniciales de ventas (el campo "abonado" al crear la venta)
+    // Calcular por cobrar
     V.forEach(v => {
       const total = Number(v.total_venta) || 0;
       const abonadoInicial = Number(v.abonado) || 0;
       const abonosExtra = abonosPorVenta[v.id] || 0;
       const abonadoTotal = abonadoInicial + abonosExtra;
-
       por_cobrar += Math.max(total - abonadoTotal, 0);
-
-      // Solo suma a caja el abonado inicial si la venta se CREO despues del checkpoint
-      const fechaCreacionVenta = v.creado_en ? new Date(v.creado_en) : new Date(v.fecha);
-      if (fechaCreacionVenta >= fechaAjuste) {
-        dinero_en_caja += abonadoInicial;
-      }
     });
 
-    // Abonos extra registrados: solo suma si el abono se CREO despues del checkpoint
-    A.forEach(a => {
-      const fechaCreacionAbono = a.creado_en ? new Date(a.creado_en) : new Date(a.fecha);
-      if (fechaCreacionAbono >= fechaAjuste) {
-        dinero_en_caja += Number(a.monto) || 0;
-      }
-    });
-
-    // Ganancia realizada (sobre TODO lo vendido historicamente, no solo lo de caja)
+    // Calcular ganancia realizada
     let costo_de_lo_vendido = 0;
-    let cobrado_total_historico = 0;
     P.forEach(p => {
       const cu = costoUnitario(p);
       const vendidas = vendidasPorPerfume[p.id] || 0;
       costo_de_lo_vendido += cu * vendidas;
     });
-    V.forEach(v => {
-      const abonadoInicial = Number(v.abonado) || 0;
-      const abonosExtra = abonosPorVenta[v.id] || 0;
-      cobrado_total_historico += abonadoInicial + abonosExtra;
-    });
-    const ganancia_realizada = cobrado_total_historico - costo_de_lo_vendido;
+    const ganancia_realizada = totalCobradoVentas - costo_de_lo_vendido;
 
     res.json({
       dinero_en_caja,
@@ -215,8 +201,7 @@ app.get('/api/resumen', async (req, res) => {
       capital_en_inventario,
       capital_invertido,
       stock,
-      valor_stock_publico,
-      saldo_ajustado_en: cajaConfig ? cajaConfig.fecha_ajuste : null
+      valor_stock_publico
     });
   } catch (error) {
     console.error('Error en /api/resumen:', error);
@@ -469,6 +454,42 @@ app.post('/api/fondo/movimientos', async (req, res) => {
   if (!concepto || !monto || !fecha) {
     return res.status(400).json({ error: 'Concepto, monto y fecha son obligatorios' });
   }
+  
+  // Verificar que no se retire más de lo que hay en caja
+  if (tipo === 'retiro') {
+    // Obtener datos actuales para validar
+    const { data: ventas } = await supabase.from('ventas').select('*');
+    const { data: abonos } = await supabase.from('abonos').select('*');
+    const { data: fondoMovs } = await supabase.from('fondo_movimientos').select('*');
+    
+    // Calcular total cobrado
+    const abonosPorVenta = {};
+    (abonos || []).forEach(a => {
+      if (a.venta_id) {
+        abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
+      }
+    });
+    
+    let totalCobrado = 0;
+    (ventas || []).forEach(v => {
+      const abonadoInicial = Number(v.abonado) || 0;
+      const abonosExtra = abonosPorVenta[v.id] || 0;
+      totalCobrado += abonadoInicial + abonosExtra;
+    });
+    
+    const totalRetirado = (fondoMovs || [])
+      .filter(m => m.tipo === 'retiro')
+      .reduce((sum, m) => sum + Number(m.monto), 0);
+    
+    const disponible = totalCobrado - totalRetirado;
+    
+    if (Number(monto) > disponible) {
+      return res.status(400).json({ 
+        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}` 
+      });
+    }
+  }
+  
   const { data, error } = await supabase.from('fondo_movimientos').insert({
     concepto,
     monto: Number(monto),
@@ -486,6 +507,47 @@ app.put('/api/fondo/movimientos/:id', async (req, res) => {
   if (!concepto || !monto || !fecha) {
     return res.status(400).json({ error: 'Concepto, monto y fecha son obligatorios' });
   }
+  
+  // Obtener el movimiento original para saber si cambia el tipo o monto
+  const { data: original } = await supabase
+    .from('fondo_movimientos')
+    .select('*')
+    .eq('id', id)
+    .single();
+    
+  if (original && original.tipo === 'retiro' && tipo === 'retiro') {
+    // Si es un retiro y se mantiene como retiro, validar disponibilidad
+    const { data: ventas } = await supabase.from('ventas').select('*');
+    const { data: abonos } = await supabase.from('abonos').select('*');
+    const { data: fondoMovs } = await supabase.from('fondo_movimientos').select('*');
+    
+    const abonosPorVenta = {};
+    (abonos || []).forEach(a => {
+      if (a.venta_id) {
+        abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
+      }
+    });
+    
+    let totalCobrado = 0;
+    (ventas || []).forEach(v => {
+      const abonadoInicial = Number(v.abonado) || 0;
+      const abonosExtra = abonosPorVenta[v.id] || 0;
+      totalCobrado += abonadoInicial + abonosExtra;
+    });
+    
+    const totalRetirado = (fondoMovs || [])
+      .filter(m => m.tipo === 'retiro' && m.id !== parseInt(id))
+      .reduce((sum, m) => sum + Number(m.monto), 0);
+    
+    const disponible = totalCobrado - totalRetirado;
+    
+    if (Number(monto) > disponible) {
+      return res.status(400).json({ 
+        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}` 
+      });
+    }
+  }
+  
   const { data, error } = await supabase.from('fondo_movimientos').update({
     concepto,
     monto: Number(monto),
@@ -575,50 +637,6 @@ app.delete('/api/ahorro/movimientos/:id', async (req, res) => {
   const { error } = await supabase.from('ahorro_movimientos').delete().eq('id', id);
   if (error) return res.status(400).json({ error: error.message });
   res.json({ ok: true });
-});
-
-// ============================================================
-// CAJA - SALDO MANUAL (CHECKPOINT PERSISTENTE EN SUPABASE)
-// ============================================================
-app.get('/api/caja/saldo', async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('caja_config').select('*').eq('id', 1).maybeSingle();
-    if (error) return res.status(400).json({ error: error.message });
-    res.json(data || { saldo_base: 0, fecha_ajuste: null });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.put('/api/caja/saldo', async (req, res) => {
-  try {
-    const { saldo } = req.body;
-
-    if (saldo === undefined || isNaN(saldo) || saldo < 0) {
-      return res.status(400).json({ error: 'Saldo invalido. Debe ser un numero mayor o igual a 0' });
-    }
-
-    const ahora = new Date().toISOString();
-
-    const { data, error } = await supabase.from('caja_config').upsert({
-      id: 1,
-      saldo_base: Number(saldo),
-      fecha_ajuste: ahora,
-      actualizado_en: ahora
-    }).select();
-
-    if (error) return res.status(400).json({ error: error.message });
-
-    res.json({
-      mensaje: 'Saldo actualizado. A partir de ahora se sumaran las nuevas ventas y abonos.',
-      nuevo_saldo: Number(saldo),
-      fecha_ajuste: ahora
-    });
-  } catch (error) {
-    console.error('Error editando saldo:', error);
-    res.status(500).json({ error: error.message });
-  }
 });
 
 // ============================================================
