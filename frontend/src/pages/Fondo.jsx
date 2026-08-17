@@ -49,11 +49,7 @@ export default function Fondo() {
   } else if (saldoActual === 0) {
     mensajeFondo = `El fondo está en $0. No hay dinero disponible.`;
     colorMensaje = 'var(--cream-dim)';
-  } else {
-    mensajeFondo = `Faltan ${fmt(Math.abs(saldoActual))} por devolver al fondo.`;
-    colorMensaje = '#c45c5c';
-  }
-
+  } 
   const openEdit = (m) => {
     setEditId(m.id);
     setForm({
