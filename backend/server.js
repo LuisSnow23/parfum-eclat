@@ -112,16 +112,23 @@ function authenticateToken(req, res, next) {
 app.use('/api', authenticateToken);
 
 // ============================================================
-// RESUMEN (DASHBOARD) - CORREGIDO CON ABONOS
+// RESUMEN (DASHBOARD) - CON CHECKPOINT DE SALDO MANUAL
 // ============================================================
 app.get('/api/resumen', async (req, res) => {
   try {
     const { data: perfumes } = await supabase.from('perfumes').select('*');
     const { data: ventas } = await supabase.from('ventas').select('*');
     const { data: abonos } = await supabase.from('abonos').select('*');
+    const { data: cajaConfig } = await supabase
+      .from('caja_config').select('*').eq('id', 1).maybeSingle();
 
     const P = perfumes || [];
     const V = ventas || [];
+    const A = abonos || [];
+
+    // Checkpoint manual: si no existe, se comporta como si fuera "desde siempre"
+    const saldoBase = cajaConfig ? Number(cajaConfig.saldo_base) || 0 : 0;
+    const fechaAjuste = cajaConfig ? new Date(cajaConfig.fecha_ajuste) : new Date(0);
 
     // Ventas por perfume
     const vendidasPorPerfume = {};
@@ -132,7 +139,6 @@ app.get('/api/resumen', async (req, res) => {
       }
     });
 
-    let dinero_en_caja = 0;
     let por_cobrar = 0;
     let capital_en_inventario = 0;
     let capital_invertido = 0;
@@ -152,33 +158,55 @@ app.get('/api/resumen', async (req, res) => {
       valor_stock_publico += (Number(p.precio_publico) || 0) * stk;
     });
 
-    // Crear mapa de abonos por venta
+    // Mapa de abonos extra por venta
     const abonosPorVenta = {};
-    (abonos || []).forEach(a => {
+    A.forEach(a => {
       if (a.venta_id) {
         abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
       }
     });
 
-    // Calcular cobrado y por cobrar (sumando abonos)
+    // --- DINERO EN CAJA: saldo base + solo lo cobrado DESPUES del checkpoint ---
+    let dinero_en_caja = saldoBase;
+
+    // Abonos iniciales de ventas (el campo "abonado" al crear la venta)
     V.forEach(v => {
       const total = Number(v.total_venta) || 0;
       const abonadoInicial = Number(v.abonado) || 0;
       const abonosExtra = abonosPorVenta[v.id] || 0;
       const abonadoTotal = abonadoInicial + abonosExtra;
-      
-      dinero_en_caja += abonadoTotal;
+
       por_cobrar += Math.max(total - abonadoTotal, 0);
+
+      // Solo suma a caja el abonado inicial si la venta se CREO despues del checkpoint
+      const fechaCreacionVenta = v.creado_en ? new Date(v.creado_en) : new Date(v.fecha);
+      if (fechaCreacionVenta >= fechaAjuste) {
+        dinero_en_caja += abonadoInicial;
+      }
     });
 
-    // Calcular ganancia realizada
+    // Abonos extra registrados: solo suma si el abono se CREO despues del checkpoint
+    A.forEach(a => {
+      const fechaCreacionAbono = a.creado_en ? new Date(a.creado_en) : new Date(a.fecha);
+      if (fechaCreacionAbono >= fechaAjuste) {
+        dinero_en_caja += Number(a.monto) || 0;
+      }
+    });
+
+    // Ganancia realizada (sobre TODO lo vendido historicamente, no solo lo de caja)
     let costo_de_lo_vendido = 0;
+    let cobrado_total_historico = 0;
     P.forEach(p => {
       const cu = costoUnitario(p);
       const vendidas = vendidasPorPerfume[p.id] || 0;
       costo_de_lo_vendido += cu * vendidas;
     });
-    const ganancia_realizada = dinero_en_caja - costo_de_lo_vendido;
+    V.forEach(v => {
+      const abonadoInicial = Number(v.abonado) || 0;
+      const abonosExtra = abonosPorVenta[v.id] || 0;
+      cobrado_total_historico += abonadoInicial + abonosExtra;
+    });
+    const ganancia_realizada = cobrado_total_historico - costo_de_lo_vendido;
 
     res.json({
       dinero_en_caja,
@@ -187,7 +215,8 @@ app.get('/api/resumen', async (req, res) => {
       capital_en_inventario,
       capital_invertido,
       stock,
-      valor_stock_publico
+      valor_stock_publico,
+      saldo_ajustado_en: cajaConfig ? cajaConfig.fecha_ajuste : null
     });
   } catch (error) {
     console.error('Error en /api/resumen:', error);
@@ -549,19 +578,42 @@ app.delete('/api/ahorro/movimientos/:id', async (req, res) => {
 });
 
 // ============================================================
-// RUTA PARA EDITAR EL SALDO MANUALMENTE
+// CAJA - SALDO MANUAL (CHECKPOINT PERSISTENTE EN SUPABASE)
 // ============================================================
-app.put('/api/caja/saldo', authenticateToken, async (req, res) => {
+app.get('/api/caja/saldo', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('caja_config').select('*').eq('id', 1).maybeSingle();
+    if (error) return res.status(400).json({ error: error.message });
+    res.json(data || { saldo_base: 0, fecha_ajuste: null });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/caja/saldo', async (req, res) => {
   try {
     const { saldo } = req.body;
-    
+
     if (saldo === undefined || isNaN(saldo) || saldo < 0) {
       return res.status(400).json({ error: 'Saldo invalido. Debe ser un numero mayor o igual a 0' });
     }
 
-    res.json({ 
-      mensaje: 'Saldo actualizado manualmente',
-      nuevo_saldo: Number(saldo)
+    const ahora = new Date().toISOString();
+
+    const { data, error } = await supabase.from('caja_config').upsert({
+      id: 1,
+      saldo_base: Number(saldo),
+      fecha_ajuste: ahora,
+      actualizado_en: ahora
+    }).select();
+
+    if (error) return res.status(400).json({ error: error.message });
+
+    res.json({
+      mensaje: 'Saldo actualizado. A partir de ahora se sumaran las nuevas ventas y abonos.',
+      nuevo_saldo: Number(saldo),
+      fecha_ajuste: ahora
     });
   } catch (error) {
     console.error('Error editando saldo:', error);
