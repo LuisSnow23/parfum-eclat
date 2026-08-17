@@ -147,23 +147,6 @@ export default function Fondo() {
         borderColor: saldoActual < 0 ? '#c45c5c' : '#4a8c6a',
         borderWidth: '2px'
       }}>
-        <div className="flex-between" style={{ alignItems: 'center' }}>
-          <div>
-            <div className="label" style={{ marginBottom: 4 }}>Estado del Fondo</div>
-            <div style={{ 
-              fontSize: '1.2rem', 
-              fontWeight: 500,
-              color: colorMensaje
-            }}>
-              {mensajeFondo}
-            </div>
-          </div>
-          <div style={{ fontSize: '2rem', lineHeight: 1 }}>
-            {saldoActual < 0 ? '⚠️' : '✅'}
-          </div>
-        </div>
-      </div>
-
       {/* INFO DE DISPONIBILIDAD EN CAJA */}
       {resumen && (
         <div className="card" style={{ 
