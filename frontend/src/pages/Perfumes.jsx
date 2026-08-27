@@ -41,6 +41,7 @@ export default function Perfumes() {
     fecha: hoy,
     notas: '',
   })
+  const [editAbonoId, setEditAbonoId] = useState(null)
 
   const load = async () => {
     const [r, p, v] = await Promise.all([
@@ -219,11 +220,24 @@ export default function Perfumes() {
 
   const openAbono = (v) => {
     setVentaAbono(v)
-
+    setEditAbonoId(null)
     setAbonoForm({
       monto: '',
       fecha: hoy,
       notas: '',
+    })
+
+    setError('')
+    setModal('abono')
+  }
+
+  const openEditAbono = (abono, venta) => {
+    setVentaAbono(venta)
+    setEditAbonoId(abono.id)
+    setAbonoForm({
+      monto: abono.monto,
+      fecha: abono.fecha || hoy,
+      notas: abono.notas || '',
     })
 
     setError('')
@@ -238,10 +252,14 @@ export default function Perfumes() {
       return
     }
 
-    const res = await api.post(
-      `/ventas/${ventaAbono.id}/abonos`,
-      abonoForm
-    )
+    let res
+    if (editAbonoId) {
+      // Editar abono existente
+      res = await api.put(`/abonos/${editAbonoId}`, abonoForm)
+    } else {
+      // Crear nuevo abono
+      res = await api.post(`/ventas/${ventaAbono.id}/abonos`, abonoForm)
+    }
 
     if (res.error) {
       setError(res.error)
@@ -251,6 +269,7 @@ export default function Perfumes() {
     await load()
     setModal(null)
     setVentaAbono(null)
+    setEditAbonoId(null)
   }
 
   const eliminar = async (tipo, id) => {
@@ -649,7 +668,6 @@ export default function Perfumes() {
                       {fmt(v.resto)}
                     </td>
 
-                    {/* COLUMNA NOTAS */}
                     <td>
                       {v.notas || '—'}
                     </td>
@@ -671,7 +689,7 @@ export default function Perfumes() {
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <button
                         className="btn-icon"
-                        title="Editar"
+                        title="Editar venta"
                         onClick={() =>
                           openEditVenta(v)
                         }
@@ -682,7 +700,7 @@ export default function Perfumes() {
                       {!v.liquidado && (
                         <button
                           className="btn-icon"
-                          title="Abono"
+                          title="Agregar abono"
                           onClick={() =>
                             openAbono(v)
                           }
@@ -693,7 +711,7 @@ export default function Perfumes() {
 
                       <button
                         className="btn-icon"
-                        title="Eliminar"
+                        title="Eliminar venta"
                         onClick={() =>
                           eliminar('ventas', v.id)
                         }
@@ -709,7 +727,7 @@ export default function Perfumes() {
         )}
       </div>
 
-      {/* HISTORIAL ABONOS */}
+      {/* HISTORIAL ABONOS CON EDITAR */}
       {ventas.some(v => v.abonos?.length > 0) && (
         <div
           className="card"
@@ -768,9 +786,19 @@ export default function Perfumes() {
                           {a.notas || '—'}
                         </td>
 
-                        <td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
                           <button
                             className="btn-icon"
+                            title="Editar abono"
+                            onClick={() =>
+                              openEditAbono(a, v)
+                            }
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            className="btn-icon"
+                            title="Eliminar abono"
                             onClick={() =>
                               eliminar(
                                 'abonos',
@@ -818,7 +846,9 @@ export default function Perfumes() {
                     : 'Registrar venta')}
 
                 {modal === 'abono' &&
-                  'Registrar abono'}
+                  (editAbonoId
+                    ? 'Editar abono'
+                    : 'Registrar abono')}
               </span>
 
               <button
@@ -826,6 +856,7 @@ export default function Perfumes() {
                 onClick={() => {
                   setModal(null)
                   setEditId(null)
+                  setEditAbonoId(null)
                 }}
               >
                 <X size={16} />
@@ -1541,6 +1572,7 @@ export default function Perfumes() {
                 onClick={() => {
                   setModal(null)
                   setEditId(null)
+                  setEditAbonoId(null)
                 }}
               >
                 Cancelar
@@ -1562,7 +1594,7 @@ export default function Perfumes() {
                   }
                 }}
               >
-                {editId
+                {editId || editAbonoId
                   ? 'Guardar cambios'
                   : 'Guardar'}
               </button>
