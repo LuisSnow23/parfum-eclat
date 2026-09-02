@@ -112,7 +112,7 @@ function authenticateToken(req, res, next) {
 app.use('/api', authenticateToken);
 
 // ============================================================
-// RESUMEN (DASHBOARD) - CON VALOR POTENCIAL TOTAL
+// RESUMEN (DASHBOARD)
 // ============================================================
 app.get('/api/resumen', async (req, res) => {
   try {
@@ -195,19 +195,25 @@ app.get('/api/resumen', async (req, res) => {
     const ganancia_realizada = totalCobradoVentas - costo_de_lo_vendido;
 
     // ============================================================
-    // VALOR POTENCIAL TOTAL = Dinero en caja + Por cobrar + Valor stock a público
+    // TOTAL A COBRAR = Dinero en caja + Por cobrar
     // ============================================================
-    const valor_potencial_total = dinero_en_caja + por_cobrar + valor_stock_publico;
+    const total_a_cobrar = dinero_en_caja + por_cobrar;
+
+    // ============================================================
+    // VALOR POTENCIAL TOTAL = Total a cobrar + Valor stock a público
+    // ============================================================
+    const valor_potencial_total = total_a_cobrar + valor_stock_publico;
 
     res.json({
       dinero_en_caja,
       por_cobrar,
+      total_a_cobrar,
       ganancia_realizada,
       capital_en_inventario,
       capital_invertido,
       stock,
       valor_stock_publico,
-      valor_potencial_total  // ✅ NUEVO CAMPO
+      valor_potencial_total
     });
   } catch (error) {
     console.error('Error en /api/resumen:', error);
