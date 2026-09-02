@@ -419,6 +419,11 @@ export default function Perfumes() {
           value={fmt(resumen.valor_stock_publico)}
           color="#c9a84c"
         />
+        <Kpi
+          label="Valor potencial total"
+          value={fmt(resumen.valor_potencial_total)}
+          color="#f0c040"
+        />
       </div>
 
       <div

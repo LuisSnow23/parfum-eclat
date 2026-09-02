@@ -112,7 +112,7 @@ function authenticateToken(req, res, next) {
 app.use('/api', authenticateToken);
 
 // ============================================================
-// RESUMEN (DASHBOARD) - CORREGIDO CON FONDO DE SOCIOS
+// RESUMEN (DASHBOARD) - CON VALOR POTENCIAL TOTAL
 // ============================================================
 app.get('/api/resumen', async (req, res) => {
   try {
@@ -194,6 +194,11 @@ app.get('/api/resumen', async (req, res) => {
     });
     const ganancia_realizada = totalCobradoVentas - costo_de_lo_vendido;
 
+    // ============================================================
+    // VALOR POTENCIAL TOTAL = Dinero en caja + Por cobrar + Valor stock a público
+    // ============================================================
+    const valor_potencial_total = dinero_en_caja + por_cobrar + valor_stock_publico;
+
     res.json({
       dinero_en_caja,
       por_cobrar,
@@ -201,7 +206,8 @@ app.get('/api/resumen', async (req, res) => {
       capital_en_inventario,
       capital_invertido,
       stock,
-      valor_stock_publico
+      valor_stock_publico,
+      valor_potencial_total  // ✅ NUEVO CAMPO
     });
   } catch (error) {
     console.error('Error en /api/resumen:', error);
@@ -422,20 +428,71 @@ app.put('/api/abonos/:id', async (req, res) => {
   }
   if (!fecha) return res.status(400).json({ error: 'Fecha requerida' });
 
+  // Obtener el abono actual para recalcular
+  const { data: abonoActual } = await supabase
+    .from('abonos')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  const montoNum = Number(monto);
+  const montoAnterior = Number(abonoActual?.monto) || 0;
+
   const { data, error } = await supabase.from('abonos').update({
-    monto: Number(monto),
+    monto: montoNum,
     fecha,
     notas
   }).eq('id', id).select();
 
   if (error) return res.status(400).json({ error: error.message });
+
+  // Si cambió el monto, actualizar el abonado en la venta
+  if (montoNum !== montoAnterior && abonoActual) {
+    // Recalcular el total abonado de la venta
+    const { data: abonos } = await supabase
+      .from('abonos')
+      .select('monto')
+      .eq('venta_id', abonoActual.venta_id);
+    
+    const totalAbonos = (abonos || []).reduce((sum, a) => sum + Number(a.monto), 0);
+    
+    await supabase
+      .from('ventas')
+      .update({ abonado: totalAbonos })
+      .eq('id', abonoActual.venta_id);
+  }
+
   res.json({ id: data[0].id });
 });
 
 app.delete('/api/abonos/:id', async (req, res) => {
   const { id } = req.params;
+  
+  // Obtener el abono antes de eliminar
+  const { data: abono } = await supabase
+    .from('abonos')
+    .select('*')
+    .eq('id', id)
+    .single();
+
   const { error } = await supabase.from('abonos').delete().eq('id', id);
   if (error) return res.status(400).json({ error: error.message });
+
+  // Recalcular el total abonado de la venta
+  if (abono) {
+    const { data: abonos } = await supabase
+      .from('abonos')
+      .select('monto')
+      .eq('venta_id', abono.venta_id);
+    
+    const totalAbonos = (abonos || []).reduce((sum, a) => sum + Number(a.monto), 0);
+    
+    await supabase
+      .from('ventas')
+      .update({ abonado: totalAbonos })
+      .eq('id', abono.venta_id);
+  }
+
   res.json({ ok: true });
 });
 
