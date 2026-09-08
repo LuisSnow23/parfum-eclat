@@ -43,7 +43,7 @@ export default function Perfumes() {
   })
   const [editAbonoId, setEditAbonoId] = useState(null)
 
-  // Estados para el historial
+  // Filtros para el historial
   const [historialFiltro, setHistorialFiltro] = useState({
     cliente: '',
     perfume: '',
@@ -293,16 +293,20 @@ export default function Perfumes() {
     load()
   }
 
+  // Ventas NO liquidadas (para la tabla principal)
+  const ventasPendientes = ventas.filter(v => !v.liquidado)
+
+  // Ventas liquidadas (para el historial)
+  const ventasLiquidadas = ventas.filter(v => v.liquidado)
+
   // Filtrar ventas para el historial
-  const ventasFiltradas = ventas.filter(v => {
+  const ventasFiltradas = ventasLiquidadas.filter(v => {
     if (historialFiltro.cliente && !v.cliente?.toLowerCase().includes(historialFiltro.cliente.toLowerCase())) {
       return false
     }
     if (historialFiltro.perfume && !v.perfume_nombre?.toLowerCase().includes(historialFiltro.perfume.toLowerCase())) {
       return false
     }
-    if (historialFiltro.estado === 'liquidado' && !v.liquidado) return false
-    if (historialFiltro.estado === 'pendiente' && v.liquidado) return false
     if (historialFiltro.fechaInicio && v.fecha < historialFiltro.fechaInicio) return false
     if (historialFiltro.fechaFin && v.fecha > historialFiltro.fechaFin) return false
     return true
@@ -322,7 +326,7 @@ export default function Perfumes() {
     )
   }
 
-  const totalPorCobrarGlobal = ventas.reduce(
+  const totalPorCobrarGlobal = ventasPendientes.reduce(
     (acc, venta) => acc + (venta.resto || 0),
     0
   )
@@ -383,7 +387,7 @@ export default function Perfumes() {
             style={{ borderColor: 'var(--gold)' }}
           >
             <Clock size={14} />
-            Historial
+            Historial de ventas
           </button>
 
           <button
@@ -432,12 +436,6 @@ export default function Perfumes() {
           label="Por cobrar (de ventas)"
           value={fmt(totalPorCobrarGlobal)}
           color="#c9a84c"
-        />
-
-        <Kpi
-          label="Total a cobrar"
-          value={fmt(resumen.total_a_cobrar)}
-          color="#8b5cf6"
         />
 
         <Kpi
@@ -493,7 +491,7 @@ export default function Perfumes() {
         <br />
 
         <em>Por cobrar</em> = Suma de los saldos restantes de
-        TODAS las ventas.
+        TODAS las ventas pendientes.
         <br />
 
         <em>Capital en inventario</em> = lo que te costó lo que
@@ -642,18 +640,18 @@ export default function Perfumes() {
         )}
       </div>
 
-      {/* VENTAS */}
+      {/* VENTAS - SOLO PENDIENTES (NO LIQUIDADAS) */}
       <div
         className="card"
         style={{ marginTop: 20 }}
       >
         <div className="section-title mb-4">
-          Ventas
+          Ventas pendientes ({ventasPendientes.length})
         </div>
 
-        {ventas.length === 0 ? (
+        {ventasPendientes.length === 0 ? (
           <div className="empty-state">
-            <p>Sin ventas</p>
+            <p>No hay ventas pendientes. Todas están liquidadas.</p>
           </div>
         ) : (
           <div className="table-wrap">
@@ -675,7 +673,7 @@ export default function Perfumes() {
               </thead>
 
               <tbody>
-                {ventas.map(v => (
+                {ventasPendientes.map(v => (
                   <tr key={v.id}>
                     <td>
                       {fmtDate(v.fecha)}
@@ -720,16 +718,8 @@ export default function Perfumes() {
                     </td>
 
                     <td>
-                      <span
-                        className={`badge ${
-                          v.liquidado
-                            ? 'badge-green'
-                            : 'badge-gold'
-                        }`}
-                      >
-                        {v.liquidado
-                          ? 'Liquidado'
-                          : `${v.pct_pagado}%`}
+                      <span className="badge badge-gold">
+                        {v.pct_pagado}%
                       </span>
                     </td>
 
@@ -744,17 +734,15 @@ export default function Perfumes() {
                         <Pencil size={14} />
                       </button>
 
-                      {!v.liquidado && (
-                        <button
-                          className="btn-icon"
-                          title="Agregar abono"
-                          onClick={() =>
-                            openAbono(v)
-                          }
-                        >
-                          <CreditCard size={14} />
-                        </button>
-                      )}
+                      <button
+                        className="btn-icon"
+                        title="Agregar abono"
+                        onClick={() =>
+                          openAbono(v)
+                        }
+                      >
+                        <CreditCard size={14} />
+                      </button>
 
                       <button
                         className="btn-icon"
@@ -774,7 +762,7 @@ export default function Perfumes() {
         )}
       </div>
 
-      {/* HISTORIAL ABONOS CON EDITAR */}
+      {/* HISTORIAL ABONOS */}
       {ventas.some(v => v.abonos?.length > 0) && (
         <div
           className="card"
@@ -897,7 +885,7 @@ export default function Perfumes() {
                     ? 'Editar abono'
                     : 'Registrar abono')}
 
-                {modal === 'historial' && 'Historial de ventas'}
+                {modal === 'historial' && 'Historial de ventas liquidadas'}
               </span>
 
               <button
@@ -927,11 +915,10 @@ export default function Perfumes() {
 
               {modal === 'historial' && (
                 <>
-                  {/* Filtros */}
                   <div
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '1fr 1fr 1fr',
+                      gridTemplateColumns: '1fr 1fr',
                       gap: 10,
                       marginBottom: 16,
                     }}
@@ -958,23 +945,8 @@ export default function Perfumes() {
                         }))
                       }
                     />
-                    <select
-                      className="form-input"
-                      value={historialFiltro.estado}
-                      onChange={e =>
-                        setHistorialFiltro(f => ({
-                          ...f,
-                          estado: e.target.value,
-                        }))
-                      }
-                    >
-                      <option value="todos">Todos</option>
-                      <option value="liquidado">Liquidados</option>
-                      <option value="pendiente">Pendientes</option>
-                    </select>
                   </div>
 
-                  {/* Tabla */}
                   <div
                     className="table-wrap"
                     style={{ maxHeight: 400, overflowY: 'auto' }}
@@ -988,7 +960,7 @@ export default function Perfumes() {
                           <th>Total</th>
                           <th>Abonado</th>
                           <th>Resta</th>
-                          <th>Estado</th>
+                          <th>Notas</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1001,7 +973,7 @@ export default function Perfumes() {
                                 color: 'var(--cream-dim)',
                               }}
                             >
-                              Sin ventas
+                              No hay ventas liquidadas
                             </td>
                           </tr>
                         ) : (
@@ -1024,17 +996,7 @@ export default function Perfumes() {
                                 {fmt(v.resto)}
                               </td>
                               <td>
-                                <span
-                                  className={`badge ${
-                                    v.liquidado
-                                      ? 'badge-green'
-                                      : 'badge-gold'
-                                  }`}
-                                >
-                                  {v.liquidado
-                                    ? 'Liquidado'
-                                    : `${v.pct_pagado}%`}
-                                </span>
+                                {v.notas || '—'}
                               </td>
                             </tr>
                           ))
@@ -1043,7 +1005,6 @@ export default function Perfumes() {
                     </table>
                   </div>
 
-                  {/* Totales */}
                   <div
                     style={{
                       marginTop: 16,
@@ -1079,22 +1040,6 @@ export default function Perfumes() {
                         {fmt(
                           ventasFiltradas.reduce(
                             (s, v) => s + v.abonado,
-                            0
-                          )
-                        )}
-                      </strong>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '0.85rem',
-                        color: 'var(--cream-dim)',
-                      }}
-                    >
-                      Por cobrar:{' '}
-                      <strong style={{ color: '#c9a84c' }}>
-                        {fmt(
-                          ventasFiltradas.reduce(
-                            (s, v) => s + v.resto,
                             0
                           )
                         )}
