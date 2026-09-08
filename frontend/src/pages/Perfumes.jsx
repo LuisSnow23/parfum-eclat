@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Trash2, ShoppingCart, Package, CreditCard, Pencil } from 'lucide-react'
+import { Plus, X, Trash2, ShoppingCart, Package, CreditCard, Pencil, Clock } from 'lucide-react'
 import { api, fmt, fmtDate } from '../api'
 
 const hoy = new Date().toISOString().split('T')[0]
@@ -42,6 +42,15 @@ export default function Perfumes() {
     notas: '',
   })
   const [editAbonoId, setEditAbonoId] = useState(null)
+
+  // Estados para el historial
+  const [historialFiltro, setHistorialFiltro] = useState({
+    cliente: '',
+    perfume: '',
+    estado: 'todos',
+    fechaInicio: '',
+    fechaFin: ''
+  })
 
   const load = async () => {
     const [r, p, v] = await Promise.all([
@@ -254,10 +263,8 @@ export default function Perfumes() {
 
     let res
     if (editAbonoId) {
-      // Editar abono existente
       res = await api.put(`/abonos/${editAbonoId}`, abonoForm)
     } else {
-      // Crear nuevo abono
       res = await api.post(`/ventas/${ventaAbono.id}/abonos`, abonoForm)
     }
 
@@ -285,6 +292,21 @@ export default function Perfumes() {
 
     load()
   }
+
+  // Filtrar ventas para el historial
+  const ventasFiltradas = ventas.filter(v => {
+    if (historialFiltro.cliente && !v.cliente?.toLowerCase().includes(historialFiltro.cliente.toLowerCase())) {
+      return false
+    }
+    if (historialFiltro.perfume && !v.perfume_nombre?.toLowerCase().includes(historialFiltro.perfume.toLowerCase())) {
+      return false
+    }
+    if (historialFiltro.estado === 'liquidado' && !v.liquidado) return false
+    if (historialFiltro.estado === 'pendiente' && v.liquidado) return false
+    if (historialFiltro.fechaInicio && v.fecha < historialFiltro.fechaInicio) return false
+    if (historialFiltro.fechaFin && v.fecha > historialFiltro.fechaFin) return false
+    return true
+  })
 
   if (!resumen) {
     return (
@@ -352,6 +374,19 @@ export default function Perfumes() {
           </button>
 
           <button
+            className="btn btn-outline"
+            onClick={() => {
+              setError('')
+              setHistorialFiltro({ cliente: '', perfume: '', estado: 'todos', fechaInicio: '', fechaFin: '' })
+              setModal('historial')
+            }}
+            style={{ borderColor: 'var(--gold)' }}
+          >
+            <Clock size={14} />
+            Historial
+          </button>
+
+          <button
             className="btn btn-gold"
             onClick={() => {
               setError('')
@@ -400,6 +435,12 @@ export default function Perfumes() {
         />
 
         <Kpi
+          label="Total a cobrar"
+          value={fmt(resumen.total_a_cobrar)}
+          color="#8b5cf6"
+        />
+
+        <Kpi
           label="Capital en inventario"
           value={fmt(resumen.capital_en_inventario)}
         />
@@ -419,6 +460,7 @@ export default function Perfumes() {
           value={fmt(resumen.valor_stock_publico)}
           color="#c9a84c"
         />
+
         <Kpi
           label="Valor potencial total"
           value={fmt(resumen.valor_potencial_total)}
@@ -835,7 +877,7 @@ export default function Perfumes() {
               e.stopPropagation()
             }
             style={{
-              maxWidth: 520,
+              maxWidth: modal === 'historial' ? 800 : 520,
             }}
           >
             <div className="modal-header">
@@ -854,6 +896,8 @@ export default function Perfumes() {
                   (editAbonoId
                     ? 'Editar abono'
                     : 'Registrar abono')}
+
+                {modal === 'historial' && 'Historial de ventas'}
               </span>
 
               <button
@@ -879,6 +923,185 @@ export default function Perfumes() {
                 >
                   {error}
                 </div>
+              )}
+
+              {modal === 'historial' && (
+                <>
+                  {/* Filtros */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr 1fr',
+                      gap: 10,
+                      marginBottom: 16,
+                    }}
+                  >
+                    <input
+                      className="form-input"
+                      placeholder="Buscar cliente..."
+                      value={historialFiltro.cliente}
+                      onChange={e =>
+                        setHistorialFiltro(f => ({
+                          ...f,
+                          cliente: e.target.value,
+                        }))
+                      }
+                    />
+                    <input
+                      className="form-input"
+                      placeholder="Buscar perfume..."
+                      value={historialFiltro.perfume}
+                      onChange={e =>
+                        setHistorialFiltro(f => ({
+                          ...f,
+                          perfume: e.target.value,
+                        }))
+                      }
+                    />
+                    <select
+                      className="form-input"
+                      value={historialFiltro.estado}
+                      onChange={e =>
+                        setHistorialFiltro(f => ({
+                          ...f,
+                          estado: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="todos">Todos</option>
+                      <option value="liquidado">Liquidados</option>
+                      <option value="pendiente">Pendientes</option>
+                    </select>
+                  </div>
+
+                  {/* Tabla */}
+                  <div
+                    className="table-wrap"
+                    style={{ maxHeight: 400, overflowY: 'auto' }}
+                  >
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Cliente</th>
+                          <th>Perfume</th>
+                          <th>Total</th>
+                          <th>Abonado</th>
+                          <th>Resta</th>
+                          <th>Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ventasFiltradas.length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={7}
+                              style={{
+                                textAlign: 'center',
+                                color: 'var(--cream-dim)',
+                              }}
+                            >
+                              Sin ventas
+                            </td>
+                          </tr>
+                        ) : (
+                          ventasFiltradas.map(v => (
+                            <tr key={v.id}>
+                              <td>{fmtDate(v.fecha)}</td>
+                              <td
+                                style={{
+                                  color: 'var(--cream)',
+                                }}
+                              >
+                                {v.cliente || '—'}
+                              </td>
+                              <td>{v.perfume_nombre}</td>
+                              <td>{fmt(v.total_venta)}</td>
+                              <td className="td-green">
+                                {fmt(v.abonado)}
+                              </td>
+                              <td className="td-gold">
+                                {fmt(v.resto)}
+                              </td>
+                              <td>
+                                <span
+                                  className={`badge ${
+                                    v.liquidado
+                                      ? 'badge-green'
+                                      : 'badge-gold'
+                                  }`}
+                                >
+                                  {v.liquidado
+                                    ? 'Liquidado'
+                                    : `${v.pct_pagado}%`}
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Totales */}
+                  <div
+                    style={{
+                      marginTop: 16,
+                      display: 'flex',
+                      gap: 20,
+                      justifyContent: 'flex-end',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '0.85rem',
+                        color: 'var(--cream-dim)',
+                      }}
+                    >
+                      Total ventas:{' '}
+                      <strong style={{ color: 'var(--cream)' }}>
+                        {fmt(
+                          ventasFiltradas.reduce(
+                            (s, v) => s + v.total_venta,
+                            0
+                          )
+                        )}
+                      </strong>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '0.85rem',
+                        color: 'var(--cream-dim)',
+                      }}
+                    >
+                      Total cobrado:{' '}
+                      <strong style={{ color: '#4a8c6a' }}>
+                        {fmt(
+                          ventasFiltradas.reduce(
+                            (s, v) => s + v.abonado,
+                            0
+                          )
+                        )}
+                      </strong>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '0.85rem',
+                        color: 'var(--cream-dim)',
+                      }}
+                    >
+                      Por cobrar:{' '}
+                      <strong style={{ color: '#c9a84c' }}>
+                        {fmt(
+                          ventasFiltradas.reduce(
+                            (s, v) => s + v.resto,
+                            0
+                          )
+                        )}
+                      </strong>
+                    </div>
+                  </div>
+                </>
               )}
 
               {modal === 'perfume' && (
