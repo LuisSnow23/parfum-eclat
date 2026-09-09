@@ -43,6 +43,10 @@ export default function Perfumes() {
   })
   const [editAbonoId, setEditAbonoId] = useState(null)
 
+  // Estados para paginación
+  const [paginaActual, setPaginaActual] = useState(1)
+  const [perfumesPorPagina] = useState(10)
+
   // Filtros para el historial
   const [historialFiltro, setHistorialFiltro] = useState({
     cliente: '',
@@ -62,6 +66,7 @@ export default function Perfumes() {
     setResumen(r)
     setPerfumes(p)
     setVentas(v)
+    setPaginaActual(1)
   }
 
   useEffect(() => {
@@ -112,6 +117,18 @@ export default function Perfumes() {
   const totalVenta = () =>
     (parseFloat(ventaForm.precio_unitario) || 0) *
     (parseInt(ventaForm.cantidad, 10) || 1)
+
+  // Calcular paginación
+  const indexUltimoPerfume = paginaActual * perfumesPorPagina
+  const indexPrimerPerfume = indexUltimoPerfume - perfumesPorPagina
+  const perfumesPaginados = perfumes.slice(indexPrimerPerfume, indexUltimoPerfume)
+  const totalPaginas = Math.ceil(perfumes.length / perfumesPorPagina)
+
+  const cambiarPagina = (numero) => {
+    if (numero >= 1 && numero <= totalPaginas) {
+      setPaginaActual(numero)
+    }
+  }
 
   const openEditPerfume = (p) => {
     setError('')
@@ -189,31 +206,29 @@ export default function Perfumes() {
     }
 
     const total = totalVenta()
+    const abonadoInicial = ventaForm.tipo_pago === 'contado' ? total : (Number(ventaForm.abonado) || 0)
 
-    if (editId) {
-      const res = await api.put(`/ventas/${editId}`, {
-        ...ventaForm,
-        total_venta: total,
+    const res = await api.post('/ventas', {
+      ...ventaForm,
+      total_venta: total,
+      abonado: 0,
+    })
+
+    if (res.error) {
+      setError(res.error)
+      return
+    }
+
+    // Si hay abono inicial, registrarlo como abono
+    if (abonadoInicial > 0) {
+      const abonoRes = await api.post(`/ventas/${res.id}/abonos`, {
+        monto: abonadoInicial,
+        fecha: ventaForm.fecha || hoy,
+        notas: ventaForm.tipo_pago === 'contado' ? 'Pago completo' : 'Abono inicial'
       })
 
-      if (res.error) {
-        setError(res.error)
-        return
-      }
-    } else {
-      const res = await api.post('/ventas', {
-        ...ventaForm,
-        total_venta: total,
-        abonado:
-          ventaForm.tipo_pago === 'contado'
-            ? total
-            : ventaForm.abonado === ''
-              ? 0
-              : Number(ventaForm.abonado),
-      })
-
-      if (res.error) {
-        setError(res.error)
+      if (abonoRes.error) {
+        setError(abonoRes.error)
         return
       }
     }
@@ -464,6 +479,37 @@ export default function Perfumes() {
           value={fmt(resumen.valor_potencial_total)}
           color="#f0c040"
         />
+
+        {/* NUEVOS CAMPOS DE GANANCIA */}
+        <Kpi
+          label="Ganancia liquidados"
+          value={fmt(resumen.ganancia_liquidados)}
+          color="#4a8c6a"
+        />
+
+        <Kpi
+          label="Ganancia pendientes"
+          value={fmt(resumen.ganancia_pendientes)}
+          color="#c9a84c"
+        />
+
+        <Kpi
+          label="Ganancia stock"
+          value={fmt(resumen.ganancia_stock)}
+          color="#8b5cf6"
+        />
+
+        <Kpi
+          label="Ganancia total"
+          value={fmt(resumen.ganancia_total)}
+          color="#f0c040"
+        />
+
+        <Kpi
+          label="Valor público total"
+          value={fmt(resumen.valor_publico_total)}
+          color="#f0c040"
+        />
       </div>
 
       <div
@@ -485,17 +531,19 @@ export default function Perfumes() {
         fondo de socios.
         <br />
 
-        Si necesitas gastar en nuevos perfumes, registra un{' '}
-        <strong>retiro en el Fondo de Socios</strong> y se
-        reflejará automáticamente.
+        <em>Ganancia liquidados</em> = Ganancia de perfumes ya pagados al 100%.
         <br />
 
-        <em>Por cobrar</em> = Suma de los saldos restantes de
-        TODAS las ventas pendientes.
+        <em>Ganancia pendientes</em> = Ganancia de perfumes vendidos pero con deuda.
         <br />
 
-        <em>Capital en inventario</em> = lo que te costó lo que
-        aún no vendes.
+        <em>Ganancia stock</em> = Ganancia potencial si vendes todo tu inventario.
+        <br />
+
+        <em>Ganancia total</em> = Suma de todas las ganancias (liquidados + pendientes + stock).
+        <br />
+
+        <em>Valor público total</em> = Precio público de TODOS los perfumes (vendidos + stock).
       </div>
 
       {error && !modal && (
@@ -512,10 +560,10 @@ export default function Perfumes() {
         </div>
       )}
 
-      {/* INVENTARIO */}
+      {/* INVENTARIO CON PAGINACIÓN */}
       <div className="card">
         <div className="section-title mb-4">
-          Inventario
+          Inventario ({perfumes.length} perfumes)
         </div>
 
         {perfumes.length === 0 ? (
@@ -531,112 +579,160 @@ export default function Perfumes() {
             <p>Sin perfumes. Registra el primero.</p>
           </div>
         ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Perfume</th>
-                  <th>Proveedor</th>
-                  <th>Costo prov.</th>
-                  <th>Envío/u</th>
-                  <th>Costo/u</th>
-                  <th>P. público</th>
-                  <th>Ganancia/u</th>
-                  <th>Cant.</th>
-                  <th>Vend.</th>
-                  <th>Stock</th>
-                  <th></th>
-                </tr>
-              </thead>
+          <>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Perfume</th>
+                    <th>Proveedor</th>
+                    <th>Costo prov.</th>
+                    <th>Envío/u</th>
+                    <th>Costo/u</th>
+                    <th>P. público</th>
+                    <th>Ganancia/u</th>
+                    <th>Cant.</th>
+                    <th>Vend.</th>
+                    <th>Stock</th>
+                    <th></th>
+                  </tr>
+                </thead>
 
-              <tbody>
-                {perfumes.map(p => (
-                  <tr key={p.id}>
-                    <td
-                      style={{
-                        color: 'var(--cream)',
-                        fontWeight: 500,
-                      }}
-                    >
-                      {p.nombre}
-                    </td>
-
-                    <td>
-                      {p.proveedor || '—'}
-                    </td>
-
-                    <td>
-                      {fmt(p.precio_proveedor)}
-                    </td>
-
-                    <td>
-                      {fmt(p.envio_unitario)}
-
-                      <span
+                <tbody>
+                  {perfumesPaginados.map(p => (
+                    <tr key={p.id}>
+                      <td
                         style={{
-                          display: 'block',
-                          fontSize: '0.65rem',
-                          color: 'var(--cream-dim)',
+                          color: 'var(--cream)',
+                          fontWeight: 500,
                         }}
                       >
-                        (lote {fmt(p.costo_envio)} / {p.piezas_envio})
-                      </span>
-                    </td>
+                        {p.nombre}
+                      </td>
 
-                    <td>
-                      {fmt(p.costo_unitario)}
-                    </td>
+                      <td>
+                        {p.proveedor || '—'}
+                      </td>
 
-                    <td className="td-gold">
-                      {fmt(p.precio_publico)}
-                    </td>
+                      <td>
+                        {fmt(p.precio_proveedor)}
+                      </td>
 
-                    <td
-                      className={
-                        p.ganancia_unitaria >= 0
-                          ? 'td-green'
-                          : 'td-red'
-                      }
-                    >
-                      {fmt(p.ganancia_unitaria)}
-                    </td>
+                      <td>
+                        {fmt(p.envio_unitario)}
 
-                    <td>
-                      {p.piezas_compradas}
-                    </td>
+                        <span
+                          style={{
+                            display: 'block',
+                            fontSize: '0.65rem',
+                            color: 'var(--cream-dim)',
+                          }}
+                        >
+                          (lote {fmt(p.costo_envio)} / {p.piezas_envio})
+                        </span>
+                      </td>
 
-                    <td>
-                      {p.vendidos}
-                    </td>
+                      <td>
+                        {fmt(p.costo_unitario)}
+                      </td>
 
-                    <td>
-                      {p.stock}
-                    </td>
+                      <td className="td-gold">
+                        {fmt(p.precio_publico)}
+                      </td>
 
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <button
-                        className="btn-icon"
-                        title="Editar"
-                        onClick={() => openEditPerfume(p)}
-                      >
-                        <Pencil size={14} />
-                      </button>
-
-                      <button
-                        className="btn-icon"
-                        title="Eliminar"
-                        onClick={() =>
-                          eliminar('perfumes', p.id)
+                      <td
+                        className={
+                          p.ganancia_unitaria >= 0
+                            ? 'td-green'
+                            : 'td-red'
                         }
                       >
-                        <Trash2 size={14} />
-                      </button>
-                    </td>
-                  </tr>
+                        {fmt(p.ganancia_unitaria)}
+                      </td>
+
+                      <td>
+                        {p.piezas_compradas}
+                      </td>
+
+                      <td>
+                        {p.vendidos}
+                      </td>
+
+                      <td>
+                        {p.stock}
+                      </td>
+
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <button
+                          className="btn-icon"
+                          title="Editar"
+                          onClick={() => openEditPerfume(p)}
+                        >
+                          <Pencil size={14} />
+                        </button>
+
+                        <button
+                          className="btn-icon"
+                          title="Eliminar"
+                          onClick={() =>
+                            eliminar('perfumes', p.id)
+                          }
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Paginación */}
+            {totalPaginas > 1 && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: 6,
+                marginTop: 16,
+                flexWrap: 'wrap'
+              }}>
+                <button
+                  className="btn btn-outline"
+                  onClick={() => cambiarPagina(paginaActual - 1)}
+                  disabled={paginaActual === 1}
+                  style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                >
+                  Anterior
+                </button>
+
+                {[...Array(totalPaginas)].map((_, i) => (
+                  <button
+                    key={i}
+                    className={paginaActual === i + 1 ? 'btn btn-gold' : 'btn btn-outline'}
+                    onClick={() => cambiarPagina(i + 1)}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.8rem',
+                      minWidth: '32px',
+                      ...(paginaActual === i + 1 ? { backgroundColor: 'var(--gold)', color: '#1a1a1a' } : {})
+                    }}
+                  >
+                    {i + 1}
+                  </button>
                 ))}
-              </tbody>
-            </table>
-          </div>
+
+                <button
+                  className="btn btn-outline"
+                  onClick={() => cambiarPagina(paginaActual + 1)}
+                  disabled={paginaActual === totalPaginas}
+                  style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                >
+                  Siguiente
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 

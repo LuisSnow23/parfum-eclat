@@ -112,7 +112,7 @@ function authenticateToken(req, res, next) {
 app.use('/api', authenticateToken);
 
 // ============================================================
-// RESUMEN (DASHBOARD)
+// RESUMEN (DASHBOARD) - CON GANANCIAS DETALLADAS
 // ============================================================
 app.get('/api/resumen', async (req, res) => {
   try {
@@ -141,20 +141,63 @@ app.get('/api/resumen', async (req, res) => {
       }
     });
 
-    // Calcular total cobrado de ventas (suma de todos los abonos)
+    // Calcular total cobrado de ventas
     let totalCobradoVentas = 0;
+    let totalLiquidado = 0;
+    let totalPendiente = 0;
+    let gananciaLiquidados = 0;
+    let gananciaPendientes = 0;
+    let gananciaStock = 0;
+    let valorPublicoTotal = 0;
+
     V.forEach(v => {
+      const total = Number(v.total_venta) || 0;
       const abonadoInicial = Number(v.abonado) || 0;
       const abonosExtra = abonosPorVenta[v.id] || 0;
-      totalCobradoVentas += abonadoInicial + abonosExtra;
+      const abonadoTotal = abonadoInicial + abonosExtra;
+      const resto = Math.max(total - abonadoTotal, 0);
+      const liquidado = resto <= 0 && total > 0;
+
+      totalCobradoVentas += abonadoTotal;
+
+      // Buscar el perfume para calcular ganancia
+      const p = P.find(x => x.id === v.perfume_id);
+      if (p) {
+        const cu = costoUnitario(p);
+        const cantidad = Number(v.cantidad) || 0;
+        const precioVenta = Number(v.precio_unitario) || Number(p.precio_publico) || 0;
+        const ganancia = precioVenta - cu;
+
+        if (liquidado) {
+          totalLiquidado += total;
+          gananciaLiquidados += ganancia * cantidad;
+        } else {
+          totalPendiente += total;
+          gananciaPendientes += ganancia * cantidad;
+        }
+      }
     });
 
-    // Calcular total retirado del fondo (solo retiros)
+    // Calcular ganancia del stock (perfumes no vendidos)
+    let stockTotal = 0;
+    P.forEach(p => {
+      const vendidas = vendidasPorPerfume[p.id] || 0;
+      const compradas = Number(p.piezas_compradas) || 0;
+      const stock = Math.max(compradas - vendidas, 0);
+      stockTotal += stock;
+
+      const cu = costoUnitario(p);
+      const precioPublico = Number(p.precio_publico) || 0;
+      const gananciaUnidad = precioPublico - cu;
+      gananciaStock += gananciaUnidad * stock;
+      valorPublicoTotal += precioPublico * compradas;
+    });
+
+    // Calcular total retirado del fondo
     const totalRetiradoFondo = (fondoMovimientos || [])
       .filter(m => m.tipo === 'retiro')
       .reduce((sum, m) => sum + Number(m.monto), 0);
 
-    // DINERO EN CAJA = Cobrado de ventas - Retirado del fondo
     const dinero_en_caja = Math.max(totalCobradoVentas - totalRetiradoFondo, 0);
 
     let por_cobrar = 0;
@@ -163,7 +206,6 @@ app.get('/api/resumen', async (req, res) => {
     let stock = 0;
     let valor_stock_publico = 0;
 
-    // Calcular capital y stock
     P.forEach(p => {
       const cu = costoUnitario(p);
       const compradas = Number(p.piezas_compradas) || 0;
@@ -194,14 +236,8 @@ app.get('/api/resumen', async (req, res) => {
     });
     const ganancia_realizada = totalCobradoVentas - costo_de_lo_vendido;
 
-    // ============================================================
-    // TOTAL A COBRAR = Dinero en caja + Por cobrar
-    // ============================================================
+    // Valor potencial total
     const total_a_cobrar = dinero_en_caja + por_cobrar;
-
-    // ============================================================
-    // VALOR POTENCIAL TOTAL = Total a cobrar + Valor stock a público
-    // ============================================================
     const valor_potencial_total = total_a_cobrar + valor_stock_publico;
 
     res.json({
@@ -213,7 +249,16 @@ app.get('/api/resumen', async (req, res) => {
       capital_invertido,
       stock,
       valor_stock_publico,
-      valor_potencial_total
+      valor_potencial_total,
+      // NUEVOS CAMPOS DE GANANCIA
+      ganancia_liquidados: gananciaLiquidados,
+      ganancia_pendientes: gananciaPendientes,
+      ganancia_stock: gananciaStock,
+      ganancia_total: gananciaLiquidados + gananciaPendientes + gananciaStock,
+      total_liquidado: totalLiquidado,
+      total_pendiente: totalPendiente,
+      valor_publico_total: valorPublicoTotal,
+      total_ventas: V.length
     });
   } catch (error) {
     console.error('Error en /api/resumen:', error);
@@ -323,10 +368,9 @@ app.get('/api/ventas', async (req, res) => {
   const resultado = (data || []).map(v => {
     const total = Number(v.total_venta) || 0;
 
-    const abonadoExtra = (v.abonos || []).reduce(
+    const abonado = (v.abonos || []).reduce(
       (s, a) => s + (Number(a.monto) || 0), 0
     );
-    const abonado = (Number(v.abonado) || 0) + abonadoExtra;
 
     const resto = Math.max(total - abonado, 0);
     const pct_pagado = total > 0 ? Math.round((abonado / total) * 100) : 0;
@@ -363,7 +407,7 @@ app.post('/api/ventas', async (req, res) => {
     precio_unitario: Number(precio_unitario) || 0,
     total_venta: Number(total_venta) || 0,
     tipo_pago,
-    abonado: Number(abonado) || 0,
+    abonado: 0, // Siempre 0, los abonos van a la tabla abonos
     fecha,
     notas
   }).select();
@@ -376,7 +420,7 @@ app.put('/api/ventas/:id', async (req, res) => {
   const { id } = req.params;
   const {
     perfume_id, cliente, cantidad, precio_unitario,
-    total_venta, tipo_pago, abonado, fecha, notas
+    total_venta, tipo_pago, fecha, notas
   } = req.body;
 
   const { data, error } = await supabase.from('ventas').update({
@@ -386,7 +430,6 @@ app.put('/api/ventas/:id', async (req, res) => {
     precio_unitario: Number(precio_unitario) || 0,
     total_venta: Number(total_venta) || 0,
     tipo_pago,
-    abonado: Number(abonado) || 0,
     fecha,
     notas
   }).eq('id', id).select();
@@ -434,71 +477,20 @@ app.put('/api/abonos/:id', async (req, res) => {
   }
   if (!fecha) return res.status(400).json({ error: 'Fecha requerida' });
 
-  // Obtener el abono actual para recalcular
-  const { data: abonoActual } = await supabase
-    .from('abonos')
-    .select('*')
-    .eq('id', id)
-    .single();
-
-  const montoNum = Number(monto);
-  const montoAnterior = Number(abonoActual?.monto) || 0;
-
   const { data, error } = await supabase.from('abonos').update({
-    monto: montoNum,
+    monto: Number(monto),
     fecha,
     notas
   }).eq('id', id).select();
 
   if (error) return res.status(400).json({ error: error.message });
-
-  // Si cambió el monto, actualizar el abonado en la venta
-  if (montoNum !== montoAnterior && abonoActual) {
-    // Recalcular el total abonado de la venta
-    const { data: abonos } = await supabase
-      .from('abonos')
-      .select('monto')
-      .eq('venta_id', abonoActual.venta_id);
-    
-    const totalAbonos = (abonos || []).reduce((sum, a) => sum + Number(a.monto), 0);
-    
-    await supabase
-      .from('ventas')
-      .update({ abonado: totalAbonos })
-      .eq('id', abonoActual.venta_id);
-  }
-
   res.json({ id: data[0].id });
 });
 
 app.delete('/api/abonos/:id', async (req, res) => {
   const { id } = req.params;
-  
-  // Obtener el abono antes de eliminar
-  const { data: abono } = await supabase
-    .from('abonos')
-    .select('*')
-    .eq('id', id)
-    .single();
-
   const { error } = await supabase.from('abonos').delete().eq('id', id);
   if (error) return res.status(400).json({ error: error.message });
-
-  // Recalcular el total abonado de la venta
-  if (abono) {
-    const { data: abonos } = await supabase
-      .from('abonos')
-      .select('monto')
-      .eq('venta_id', abono.venta_id);
-    
-    const totalAbonos = (abonos || []).reduce((sum, a) => sum + Number(a.monto), 0);
-    
-    await supabase
-      .from('ventas')
-      .update({ abonado: totalAbonos })
-      .eq('id', abono.venta_id);
-  }
-
   res.json({ ok: true });
 });
 
@@ -518,14 +510,11 @@ app.post('/api/fondo/movimientos', async (req, res) => {
     return res.status(400).json({ error: 'Concepto, monto y fecha son obligatorios' });
   }
   
-  // Verificar que no se retire más de lo que hay en caja
   if (tipo === 'retiro') {
-    // Obtener datos actuales para validar
     const { data: ventas } = await supabase.from('ventas').select('*');
     const { data: abonos } = await supabase.from('abonos').select('*');
     const { data: fondoMovs } = await supabase.from('fondo_movimientos').select('*');
     
-    // Calcular total cobrado
     const abonosPorVenta = {};
     (abonos || []).forEach(a => {
       if (a.venta_id) {
@@ -571,7 +560,6 @@ app.put('/api/fondo/movimientos/:id', async (req, res) => {
     return res.status(400).json({ error: 'Concepto, monto y fecha son obligatorios' });
   }
   
-  // Obtener el movimiento original para saber si cambia el tipo o monto
   const { data: original } = await supabase
     .from('fondo_movimientos')
     .select('*')
@@ -579,7 +567,6 @@ app.put('/api/fondo/movimientos/:id', async (req, res) => {
     .single();
     
   if (original && original.tipo === 'retiro' && tipo === 'retiro') {
-    // Si es un retiro y se mantiene como retiro, validar disponibilidad
     const { data: ventas } = await supabase.from('ventas').select('*');
     const { data: abonos } = await supabase.from('abonos').select('*');
     const { data: fondoMovs } = await supabase.from('fondo_movimientos').select('*');
