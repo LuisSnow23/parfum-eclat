@@ -43,9 +43,11 @@ export default function Perfumes() {
   })
   const [editAbonoId, setEditAbonoId] = useState(null)
 
+  // Estados para paginación
   const [paginaActual, setPaginaActual] = useState(1)
   const [perfumesPorPagina] = useState(10)
 
+  // Filtros para el historial - SIN estado
   const [historialFiltro, setHistorialFiltro] = useState({
     cliente: '',
     perfume: '',
@@ -115,6 +117,7 @@ export default function Perfumes() {
     (parseFloat(ventaForm.precio_unitario) || 0) *
     (parseInt(ventaForm.cantidad, 10) || 1)
 
+  // Calcular paginación
   const indexUltimoPerfume = paginaActual * perfumesPorPagina
   const indexPrimerPerfume = indexUltimoPerfume - perfumesPorPagina
   const perfumesPaginados = perfumes.slice(indexPrimerPerfume, indexUltimoPerfume)
@@ -303,9 +306,13 @@ export default function Perfumes() {
     load()
   }
 
+  // Ventas NO liquidadas (para la tabla principal)
   const ventasPendientes = ventas.filter(v => !v.liquidado)
+
+  // Ventas liquidadas (para el historial)
   const ventasLiquidadas = ventas.filter(v => v.liquidado)
 
+  // Filtrar ventas para el historial - SIN filtro de estado
   const ventasFiltradas = ventasLiquidadas.filter(v => {
     if (historialFiltro.cliente && !v.cliente?.toLowerCase().includes(historialFiltro.cliente.toLowerCase())) {
       return false
@@ -411,6 +418,7 @@ export default function Perfumes() {
         </div>
       </div>
 
+      {/* DASHBOARD MEJORADO */}
       <div className="stats-grid">
         {/* CAPITAL INVERTIDO */}
         <div className="stat-card" style={{ borderLeft: '3px solid #3b82f6' }}>
@@ -466,12 +474,18 @@ export default function Perfumes() {
           </div>
         </div>
 
-        {/* STOCK (PIEZAS) */}
-        <Kpi
-          label="📦 Stock (piezas)"
-          value={`${resumen.stock}`}
-          color="#f59e0b"
-        />
+        {/* STOCK */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #f59e0b' }}>
+          <div className="label" style={{ color: '#f59e0b' }}>
+            📦 Stock (piezas)
+          </div>
+          <div className="stat-value" style={{ color: '#f59e0b', fontSize: '1.3rem' }}>
+            {resumen.stock}
+          </div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            Piezas en inventario
+          </div>
+        </div>
 
         {/* DINERO EN CAJA */}
         <Kpi
@@ -526,7 +540,7 @@ export default function Perfumes() {
         </div>
       )}
 
-      {/* INVENTARIO */}
+      {/* INVENTARIO CON PAGINACIÓN */}
       <div className="card">
         <div className="section-title mb-4">
           Inventario ({perfumes.length} perfumes)
@@ -653,6 +667,7 @@ export default function Perfumes() {
               </table>
             </div>
 
+            {/* Paginación */}
             {totalPaginas > 1 && (
               <div style={{
                 display: 'flex',
@@ -701,7 +716,7 @@ export default function Perfumes() {
         )}
       </div>
 
-      {/* VENTAS PENDIENTES */}
+      {/* VENTAS - SOLO PENDIENTES (NO LIQUIDADAS) */}
       <div
         className="card"
         style={{ marginTop: 20 }}
@@ -823,7 +838,7 @@ export default function Perfumes() {
         )}
       </div>
 
-      {/* HISTORIAL DE ABONOS */}
+      {/* HISTORIAL ABONOS */}
       {ventas.some(v => v.abonos?.length > 0) && (
         <div
           className="card"
@@ -1809,28 +1824,7 @@ export default function Perfumes() {
                   setEditAbonoId(null)
                 }}
               >
-                Cancelar
-              </button>
-
-              <button
-                className="btn btn-gold"
-                onClick={() => {
-                  if (modal === 'perfume') {
-                    submitPerfume()
-                  }
-
-                  if (modal === 'venta') {
-                    submitVenta()
-                  }
-
-                  if (modal === 'abono') {
-                    submitAbono()
-                  }
-                }}
-              >
-                {editId || editAbonoId
-                  ? 'Guardar cambios'
-                  : 'Guardar'}
+                Cerrar
               </button>
             </div>
           </div>
