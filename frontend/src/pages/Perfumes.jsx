@@ -43,6 +43,10 @@ export default function Perfumes() {
   })
   const [editAbonoId, setEditAbonoId] = useState(null)
 
+  // Paginación del inventario
+  const PERFUMES_POR_PAGINA = 10
+  const [paginaPerfumes, setPaginaPerfumes] = useState(1)
+
   // Filtros para el historial
   const [historialFiltro, setHistorialFiltro] = useState({
     cliente: '',
@@ -331,6 +335,25 @@ export default function Perfumes() {
     0
   )
 
+  // Paginación del inventario: 10 perfumes por página
+  const totalPaginasPerfumes = Math.max(
+    1,
+    Math.ceil(perfumes.length / PERFUMES_POR_PAGINA)
+  )
+
+  const paginaPerfumesActual = Math.min(
+    paginaPerfumes,
+    totalPaginasPerfumes
+  )
+
+  const inicioPerfumes =
+    (paginaPerfumesActual - 1) * PERFUMES_POR_PAGINA
+
+  const perfumesPaginados = perfumes.slice(
+    inicioPerfumes,
+    inicioPerfumes + PERFUMES_POR_PAGINA
+  )
+
   return (
     <div>
       <div className="page-header">
@@ -550,7 +573,7 @@ export default function Perfumes() {
               </thead>
 
               <tbody>
-                {perfumes.map(p => (
+                {perfumesPaginados.map(p => (
                   <tr key={p.id}>
                     <td
                       style={{
@@ -636,6 +659,51 @@ export default function Perfumes() {
                 ))}
               </tbody>
             </table>
+
+            {perfumes.length > PERFUMES_POR_PAGINA && (
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: 12,
+                  marginTop: 16,
+                }}
+              >
+                <button
+                  className="btn btn-outline"
+                  disabled={paginaPerfumesActual === 1}
+                  onClick={() =>
+                    setPaginaPerfumes(pagina =>
+                      Math.max(1, pagina - 1)
+                    )
+                  }
+                >
+                  Anterior
+                </button>
+
+                <span
+                  style={{
+                    fontSize: '0.78rem',
+                    color: 'var(--cream-dim)',
+                  }}
+                >
+                  Página {paginaPerfumesActual} de {totalPaginasPerfumes}
+                </span>
+
+                <button
+                  className="btn btn-outline"
+                  disabled={paginaPerfumesActual === totalPaginasPerfumes}
+                  onClick={() =>
+                    setPaginaPerfumes(pagina =>
+                      Math.min(totalPaginasPerfumes, pagina + 1)
+                    )
+                  }
+                >
+                  Siguiente
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
