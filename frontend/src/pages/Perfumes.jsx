@@ -43,15 +43,12 @@ export default function Perfumes() {
   })
   const [editAbonoId, setEditAbonoId] = useState(null)
 
-  // Estados para paginación
   const [paginaActual, setPaginaActual] = useState(1)
   const [perfumesPorPagina] = useState(10)
 
-  // Filtros para el historial
   const [historialFiltro, setHistorialFiltro] = useState({
     cliente: '',
     perfume: '',
-    estado: 'todos',
     fechaInicio: '',
     fechaFin: ''
   })
@@ -118,7 +115,6 @@ export default function Perfumes() {
     (parseFloat(ventaForm.precio_unitario) || 0) *
     (parseInt(ventaForm.cantidad, 10) || 1)
 
-  // Calcular paginación
   const indexUltimoPerfume = paginaActual * perfumesPorPagina
   const indexPrimerPerfume = indexUltimoPerfume - perfumesPorPagina
   const perfumesPaginados = perfumes.slice(indexPrimerPerfume, indexUltimoPerfume)
@@ -219,7 +215,6 @@ export default function Perfumes() {
       return
     }
 
-    // Si hay abono inicial, registrarlo como abono
     if (abonadoInicial > 0) {
       const abonoRes = await api.post(`/ventas/${res.id}/abonos`, {
         monto: abonadoInicial,
@@ -308,13 +303,9 @@ export default function Perfumes() {
     load()
   }
 
-  // Ventas NO liquidadas (para la tabla principal)
   const ventasPendientes = ventas.filter(v => !v.liquidado)
-
-  // Ventas liquidadas (para el historial)
   const ventasLiquidadas = ventas.filter(v => v.liquidado)
 
-  // Filtrar ventas para el historial
   const ventasFiltradas = ventasLiquidadas.filter(v => {
     if (historialFiltro.cliente && !v.cliente?.toLowerCase().includes(historialFiltro.cliente.toLowerCase())) {
       return false
@@ -396,7 +387,7 @@ export default function Perfumes() {
             className="btn btn-outline"
             onClick={() => {
               setError('')
-              setHistorialFiltro({ cliente: '', perfume: '', estado: 'todos', fechaInicio: '', fechaFin: '' })
+              setHistorialFiltro({ cliente: '', perfume: '', fechaInicio: '', fechaFin: '' })
               setModal('historial')
             }}
             style={{ borderColor: 'var(--gold)' }}
@@ -420,9 +411,8 @@ export default function Perfumes() {
         </div>
       </div>
 
-      {/* DASHBOARD SIMPLIFICADO */}
       <div className="stats-grid">
-        {/* COLUMNA 1: CAPITAL INVERTIDO */}
+        {/* CAPITAL INVERTIDO */}
         <div className="stat-card" style={{ borderLeft: '3px solid #3b82f6' }}>
           <div className="label" style={{ color: '#3b82f6' }}>
             💰 Capital invertido
@@ -431,11 +421,11 @@ export default function Perfumes() {
             {fmt(resumen.capital_invertido)}
           </div>
           <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
-            Todo lo que has gastado en perfumes
+            Todo lo que has gastado
           </div>
         </div>
 
-        {/* COLUMNA 2: VALOR PÚBLICO TOTAL */}
+        {/* VALOR PÚBLICO TOTAL */}
         <div className="stat-card" style={{ borderLeft: '3px solid #eab308' }}>
           <div className="label" style={{ color: '#eab308' }}>
             🏷️ Valor público total
@@ -444,11 +434,11 @@ export default function Perfumes() {
             {fmt(resumen.valor_publico_total)}
           </div>
           <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
-            Precio de venta de TODO (vendido + stock)
+            Precio de venta de TODO
           </div>
         </div>
 
-        {/* COLUMNA 3: GANANCIA TOTAL */}
+        {/* GANANCIA TOTAL */}
         <div className="stat-card" style={{ borderLeft: '3px solid #22c55e' }}>
           <div className="label" style={{ color: '#22c55e' }}>
             📈 Ganancia total
@@ -461,7 +451,7 @@ export default function Perfumes() {
           </div>
         </div>
 
-        {/* COLUMNA 4: RENTABILIDAD */}
+        {/* RENTABILIDAD */}
         <div className="stat-card" style={{ borderLeft: '3px solid #8b5cf6' }}>
           <div className="label" style={{ color: '#8b5cf6' }}>
             📊 Rentabilidad
@@ -476,14 +466,21 @@ export default function Perfumes() {
           </div>
         </div>
 
-        {/* COLUMNA 5: DINERO EN CAJA */}
+        {/* STOCK (PIEZAS) */}
+        <Kpi
+          label="📦 Stock (piezas)"
+          value={`${resumen.stock}`}
+          color="#f59e0b"
+        />
+
+        {/* DINERO EN CAJA */}
         <Kpi
           label="💰 Dinero en caja"
           value={fmt(resumen.dinero_en_caja)}
           color="#4a8c6a"
         />
 
-        {/* COLUMNA 6: POR COBRAR */}
+        {/* POR COBRAR */}
         <Kpi
           label="📋 Por cobrar"
           value={fmt(resumen.por_cobrar)}
@@ -511,6 +508,8 @@ export default function Perfumes() {
         </strong>.
         <br />
         El valor total de tu negocio a precio público es de <strong style={{ color: '#eab308' }}>${fmt(resumen.valor_publico_total)}</strong>.
+        <br />
+        Tienes <strong style={{ color: '#f59e0b' }}>{resumen.stock} piezas</strong> en inventario.
       </div>
 
       {error && !modal && (
@@ -527,7 +526,7 @@ export default function Perfumes() {
         </div>
       )}
 
-      {/* INVENTARIO CON PAGINACIÓN */}
+      {/* INVENTARIO */}
       <div className="card">
         <div className="section-title mb-4">
           Inventario ({perfumes.length} perfumes)
@@ -654,7 +653,6 @@ export default function Perfumes() {
               </table>
             </div>
 
-            {/* Paginación */}
             {totalPaginas > 1 && (
               <div style={{
                 display: 'flex',
@@ -703,7 +701,7 @@ export default function Perfumes() {
         )}
       </div>
 
-      {/* VENTAS - SOLO PENDIENTES (NO LIQUIDADAS) */}
+      {/* VENTAS PENDIENTES */}
       <div
         className="card"
         style={{ marginTop: 20 }}
@@ -825,7 +823,7 @@ export default function Perfumes() {
         )}
       </div>
 
-      {/* HISTORIAL ABONOS */}
+      {/* HISTORIAL DE ABONOS */}
       {ventas.some(v => v.abonos?.length > 0) && (
         <div
           className="card"
