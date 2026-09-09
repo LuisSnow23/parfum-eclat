@@ -420,95 +420,74 @@ export default function Perfumes() {
         </div>
       </div>
 
+      {/* DASHBOARD SIMPLIFICADO */}
       <div className="stats-grid">
-        <div className="stat-card">
-          <div className="label">
-            Dinero en caja (cobrado)
+        {/* COLUMNA 1: CAPITAL INVERTIDO */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #3b82f6' }}>
+          <div className="label" style={{ color: '#3b82f6' }}>
+            💰 Capital invertido
           </div>
-
-          <div
-            className="stat-value"
-            style={{
-              color: '#4a8c6a',
-              fontSize: '1.15rem',
-            }}
-          >
-            {fmt(resumen.dinero_en_caja)}
+          <div className="stat-value" style={{ color: '#3b82f6', fontSize: '1.3rem' }}>
+            {fmt(resumen.capital_invertido)}
           </div>
-
-          <div
-            style={{
-              fontSize: '0.55rem',
-              color: 'var(--cream-dim)',
-              marginTop: 2,
-            }}
-          >
-            Cobrado de ventas - Retirado del fondo
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            Todo lo que has gastado en perfumes
           </div>
         </div>
 
-        <Kpi
-          label="Por cobrar (de ventas)"
-          value={fmt(totalPorCobrarGlobal)}
-          color="#c9a84c"
-        />
+        {/* COLUMNA 2: VALOR PÚBLICO TOTAL */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #eab308' }}>
+          <div className="label" style={{ color: '#eab308' }}>
+            🏷️ Valor público total
+          </div>
+          <div className="stat-value" style={{ color: '#eab308', fontSize: '1.3rem' }}>
+            {fmt(resumen.valor_publico_total)}
+          </div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            Precio de venta de TODO (vendido + stock)
+          </div>
+        </div>
 
-        <Kpi
-          label="Capital en inventario"
-          value={fmt(resumen.capital_en_inventario)}
-        />
+        {/* COLUMNA 3: GANANCIA TOTAL */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #22c55e' }}>
+          <div className="label" style={{ color: '#22c55e' }}>
+            📈 Ganancia total
+          </div>
+          <div className="stat-value" style={{ color: '#22c55e', fontSize: '1.3rem' }}>
+            {fmt(resumen.ganancia_total)}
+          </div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            {resumen.ganancia_total > 0 ? '✅ Ganancia positiva' : '❌ Pérdida'}
+          </div>
+        </div>
 
-        <Kpi
-          label="Capital total invertido"
-          value={fmt(resumen.capital_invertido)}
-        />
+        {/* COLUMNA 4: RENTABILIDAD */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #8b5cf6' }}>
+          <div className="label" style={{ color: '#8b5cf6' }}>
+            📊 Rentabilidad
+          </div>
+          <div className="stat-value" style={{ color: '#8b5cf6', fontSize: '1.3rem' }}>
+            {resumen.capital_invertido > 0 
+              ? `${((resumen.ganancia_total / resumen.capital_invertido) * 100).toFixed(1)}%`
+              : '0%'}
+          </div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            Ganancia / Inversión × 100
+          </div>
+        </div>
 
+        {/* COLUMNA 5: DINERO EN CAJA */}
         <Kpi
-          label="Stock (piezas)"
-          value={`${resumen.stock}`}
-        />
-
-        <Kpi
-          label="Valor stock a público"
-          value={fmt(resumen.valor_stock_publico)}
-          color="#c9a84c"
-        />
-
-        <Kpi
-          label="Valor potencial total"
-          value={fmt(resumen.valor_potencial_total)}
-          color="#f0c040"
-        />
-
-        {/* NUEVOS CAMPOS DE GANANCIA */}
-        <Kpi
-          label="Ganancia liquidados"
-          value={fmt(resumen.ganancia_liquidados)}
+          label="💰 Dinero en caja"
+          value={fmt(resumen.dinero_en_caja)}
           color="#4a8c6a"
         />
 
+        {/* COLUMNA 6: POR COBRAR */}
         <Kpi
-          label="Ganancia pendientes"
-          value={fmt(resumen.ganancia_pendientes)}
+          label="📋 Por cobrar"
+          value={fmt(resumen.por_cobrar)}
           color="#c9a84c"
-        />
-
-        <Kpi
-          label="Ganancia stock"
-          value={fmt(resumen.ganancia_stock)}
-          color="#8b5cf6"
-        />
-
-        <Kpi
-          label="Ganancia total"
-          value={fmt(resumen.ganancia_total)}
-          color="#f0c040"
-        />
-
-        <Kpi
-          label="Valor público total"
-          value={fmt(resumen.valor_publico_total)}
-          color="#f0c040"
         />
       </div>
 
@@ -523,27 +502,15 @@ export default function Perfumes() {
         }}
       >
         <strong style={{ color: 'var(--gold)' }}>
-          Cómo leer los números:
+          Resumen:
         </strong>{' '}
-
-        <em>Dinero en caja</em> = lo que te han pagado los
-        clientes <strong>menos</strong> lo que has retirado del
-        fondo de socios.
+        Has invertido <strong style={{ color: '#3b82f6' }}>${fmt(resumen.capital_invertido)}</strong> y has generado una ganancia de <strong style={{ color: '#22c55e' }}>${fmt(resumen.ganancia_total)}</strong>, lo que representa una rentabilidad del <strong style={{ color: '#8b5cf6' }}>
+          {resumen.capital_invertido > 0 
+            ? `${((resumen.ganancia_total / resumen.capital_invertido) * 100).toFixed(1)}%`
+            : '0%'}
+        </strong>.
         <br />
-
-        <em>Ganancia liquidados</em> = Ganancia de perfumes ya pagados al 100%.
-        <br />
-
-        <em>Ganancia pendientes</em> = Ganancia de perfumes vendidos pero con deuda.
-        <br />
-
-        <em>Ganancia stock</em> = Ganancia potencial si vendes todo tu inventario.
-        <br />
-
-        <em>Ganancia total</em> = Suma de todas las ganancias (liquidados + pendientes + stock).
-        <br />
-
-        <em>Valor público total</em> = Precio público de TODOS los perfumes (vendidos + stock).
+        El valor total de tu negocio a precio público es de <strong style={{ color: '#eab308' }}>${fmt(resumen.valor_publico_total)}</strong>.
       </div>
 
       {error && !modal && (
