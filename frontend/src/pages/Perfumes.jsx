@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Trash2, ShoppingCart, Package, CreditCard, Pencil, Clock } from 'lucide-react'
+import { Plus, X, Trash2, ShoppingCart, Package, CreditCard, Pencil, Clock, Shield } from 'lucide-react'
 import { api, fmt, fmtDate } from '../api'
 
 const hoy = new Date().toISOString().split('T')[0]
@@ -43,6 +43,11 @@ export default function Perfumes() {
     notas: '',
   })
   const [editAbonoId, setEditAbonoId] = useState(null)
+
+  // Estados para Batch Code
+  const [batchCodeInput, setBatchCodeInput] = useState('')
+  const [batchCodeResult, setBatchCodeResult] = useState(null)
+  const [batchCodeLoading, setBatchCodeLoading] = useState(false)
 
   // Paginación del inventario
   const PERFUMES_POR_PAGINA = 10
@@ -117,6 +122,58 @@ export default function Perfumes() {
   const totalVenta = () =>
     (parseFloat(ventaForm.precio_unitario) || 0) *
     (parseInt(ventaForm.cantidad, 10) || 1)
+
+  // ============================================================
+  // FUNCION PARA VERIFICAR BATCH CODE
+  // ============================================================
+  const verificarBatchCode = async () => {
+    if (!batchCodeInput.trim()) {
+      setBatchCodeResult({ error: 'Escribe un código para verificar' })
+      return
+    }
+
+    setBatchCodeLoading(true)
+    setBatchCodeResult(null)
+
+    try {
+      const codigo = batchCodeInput.trim().toUpperCase()
+
+      // Validación básica: los batch codes tienen entre 4 y 12 caracteres alfanuméricos
+      if (!/^[A-Z0-9]{4,12}$/.test(codigo)) {
+        setBatchCodeResult({
+          error: 'Formato inválido',
+          mensaje: 'El batch code debe tener entre 4 y 12 caracteres alfanuméricos (letras y números).'
+        })
+        setBatchCodeLoading(false)
+        return
+      }
+
+      // Verificar si ya existe en tu inventario
+      const perfumeExistente = perfumes.find(
+        p => p.batch_code && p.batch_code.toUpperCase() === codigo
+      )
+
+      if (perfumeExistente) {
+        setBatchCodeResult({
+          exito: true,
+          mensaje: '✅ Código registrado en tu inventario',
+          perfume: perfumeExistente.nombre,
+          proveedor: perfumeExistente.proveedor,
+          batch_code: perfumeExistente.batch_code
+        })
+      } else {
+        setBatchCodeResult({
+          advertencia: true,
+          mensaje: '⚠️ Código válido pero no está registrado en tu inventario',
+          sugerencia: 'Si este perfume es nuevo, regístralo para llevar control.'
+        })
+      }
+    } catch (err) {
+      setBatchCodeResult({ error: 'Error al verificar: ' + err.message })
+    } finally {
+      setBatchCodeLoading(false)
+    }
+  }
 
   const openEditPerfume = (p) => {
     setError('')
@@ -299,13 +356,9 @@ export default function Perfumes() {
     load()
   }
 
-  // Ventas NO liquidadas (para la tabla principal)
   const ventasPendientes = ventas.filter(v => !v.liquidado)
-
-  // Ventas liquidadas (para el historial)
   const ventasLiquidadas = ventas.filter(v => v.liquidado)
 
-  // Filtrar ventas para el historial
   const ventasFiltradas = ventasLiquidadas.filter(v => {
     if (historialFiltro.cliente && !v.cliente?.toLowerCase().includes(historialFiltro.cliente.toLowerCase())) {
       return false
@@ -337,7 +390,6 @@ export default function Perfumes() {
     0
   )
 
-  // Paginación del inventario: 10 perfumes por página
   const totalPaginasPerfumes = Math.max(
     1,
     Math.ceil(perfumes.length / PERFUMES_POR_PAGINA)
@@ -400,6 +452,20 @@ export default function Perfumes() {
           >
             <ShoppingCart size={14} />
             Vender
+          </button>
+
+          <button
+            className="btn btn-outline"
+            onClick={() => {
+              setError('')
+              setBatchCodeInput('')
+              setBatchCodeResult(null)
+              setModal('batch')
+            }}
+            style={{ borderColor: 'var(--gold)' }}
+          >
+            <Shield size={14} />
+            Batch Code
           </button>
 
           <button
@@ -961,6 +1027,8 @@ export default function Perfumes() {
                     : 'Registrar abono')}
 
                 {modal === 'historial' && 'Historial de ventas liquidadas'}
+
+                {modal === 'batch' && 'Verificar Batch Code'}
               </span>
 
               <button
@@ -986,6 +1054,91 @@ export default function Perfumes() {
                 >
                   {error}
                 </div>
+              )}
+
+              {modal === 'batch' && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">
+                      Código de lote (Batch Code)
+                    </label>
+                    <input
+                      className="form-input"
+                      value={batchCodeInput}
+                      onChange={e => setBatchCodeInput(e.target.value)}
+                      placeholder="Ej: 9X01AB"
+                      autoFocus
+                    />
+                    <div style={{ fontSize: '0.7rem', color: 'var(--cream-dim)', marginTop: 4 }}>
+                      Busca el código en el fondo del frasco o en la caja del perfume.
+                    </div>
+                  </div>
+
+                  <button
+                    className="btn btn-gold"
+                    onClick={verificarBatchCode}
+                    disabled={batchCodeLoading}
+                    style={{ width: '100%', marginBottom: 16 }}
+                  >
+                    {batchCodeLoading ? 'Verificando...' : 'Verificar código'}
+                  </button>
+
+                  {batchCodeResult && (
+                    <div
+                      style={{
+                        padding: 14,
+                        borderRadius: 6,
+                        background: batchCodeResult.error
+                          ? 'rgba(196, 92, 92, 0.1)'
+                          : batchCodeResult.advertencia
+                            ? 'rgba(201, 168, 76, 0.1)'
+                            : 'rgba(74, 140, 106, 0.1)',
+                        border: `1px solid ${
+                          batchCodeResult.error
+                            ? '#c45c5c'
+                            : batchCodeResult.advertencia
+                              ? '#c9a84c'
+                              : '#4a8c6a'
+                        }`,
+                        fontSize: '0.85rem',
+                        lineHeight: 1.6
+                      }}
+                    >
+                      {batchCodeResult.error && (
+                        <div style={{ color: '#c45c5c' }}>
+                          <strong>❌ {batchCodeResult.error}</strong>
+                          {batchCodeResult.mensaje && <div>{batchCodeResult.mensaje}</div>}
+                        </div>
+                      )}
+
+                      {batchCodeResult.exito && (
+                        <div style={{ color: '#4a8c6a' }}>
+                          <strong>{batchCodeResult.mensaje}</strong>
+                          <div>Perfume: {batchCodeResult.perfume}</div>
+                          <div>Proveedor: {batchCodeResult.proveedor || '—'}</div>
+                        </div>
+                      )}
+
+                      {batchCodeResult.advertencia && (
+                        <div style={{ color: '#c9a84c' }}>
+                          <strong>{batchCodeResult.mensaje}</strong>
+                          {batchCodeResult.sugerencia && <div>{batchCodeResult.sugerencia}</div>}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 16, textAlign: 'center' }}>
+                    <a
+                      href={`https://www.checkfresh.com/search.html?q=${batchCodeInput}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: 'var(--gold)', fontSize: '0.8rem' }}
+                    >
+                      Verificar en CheckFresh.com →
+                    </a>
+                  </div>
+                </>
               )}
 
               {modal === 'historial' && (
@@ -1164,7 +1317,6 @@ export default function Perfumes() {
                     />
                   </div>
 
-                  {/* NUEVO CAMPO BATCH CODE */}
                   <div className="form-group">
                     <label className="form-label">
                       Batch Code (código de lote)
@@ -1186,7 +1338,7 @@ export default function Perfumes() {
                         marginTop: 4,
                       }}
                     >
-                      Código que viene en el frasco y la caja del perfume. Ayuda a verificar originalidad y frescura.
+                      Código que viene en el frasco y la caja del perfume.
                     </div>
                   </div>
 
@@ -1849,29 +2001,31 @@ export default function Perfumes() {
                   setEditAbonoId(null)
                 }}
               >
-                Cancelar
+                Cerrar
               </button>
 
-              <button
-                className="btn btn-gold"
-                onClick={() => {
-                  if (modal === 'perfume') {
-                    submitPerfume()
-                  }
+              {(modal === 'perfume' || modal === 'venta' || modal === 'abono') && (
+                <button
+                  className="btn btn-gold"
+                  onClick={() => {
+                    if (modal === 'perfume') {
+                      submitPerfume()
+                    }
 
-                  if (modal === 'venta') {
-                    submitVenta()
-                  }
+                    if (modal === 'venta') {
+                      submitVenta()
+                    }
 
-                  if (modal === 'abono') {
-                    submitAbono()
-                  }
-                }}
-              >
-                {editId || editAbonoId
-                  ? 'Guardar cambios'
-                  : 'Guardar'}
-              </button>
+                    if (modal === 'abono') {
+                      submitAbono()
+                    }
+                  }}
+                >
+                  {editId || editAbonoId
+                    ? 'Guardar cambios'
+                    : 'Guardar'}
+                </button>
+              )}
             </div>
           </div>
         </div>
