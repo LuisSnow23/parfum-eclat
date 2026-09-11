@@ -13,6 +13,7 @@ const emptyPerfume = {
   costo_envio: 0,
   piezas_envio: 1,
   notas: '',
+  batch_code: '',
 }
 
 const emptyVenta = {
@@ -133,6 +134,7 @@ export default function Perfumes() {
         p.piezas_compradas ??
         1,
       notas: p.notas || '',
+      batch_code: p.batch_code || '',
     })
 
     setModal('perfume')
@@ -560,6 +562,7 @@ export default function Perfumes() {
                 <tr>
                   <th>Perfume</th>
                   <th>Proveedor</th>
+                  <th>Batch Code</th>
                   <th>Costo prov.</th>
                   <th>Envío/u</th>
                   <th>Costo/u</th>
@@ -586,6 +589,10 @@ export default function Perfumes() {
 
                     <td>
                       {p.proveedor || '—'}
+                    </td>
+
+                    <td style={{ fontSize: '0.75rem', color: 'var(--cream-dim)' }}>
+                      {p.batch_code || '—'}
                     </td>
 
                     <td>
@@ -1155,6 +1162,32 @@ export default function Perfumes() {
                       }
                       placeholder="Nombre del proveedor"
                     />
+                  </div>
+
+                  {/* NUEVO CAMPO BATCH CODE */}
+                  <div className="form-group">
+                    <label className="form-label">
+                      Batch Code (código de lote)
+                    </label>
+
+                    <input
+                      className="form-input"
+                      value={perfumeForm.batch_code}
+                      onChange={e =>
+                        sp('batch_code', e.target.value)
+                      }
+                      placeholder="Ej: 9X01AB"
+                    />
+
+                    <div
+                      style={{
+                        fontSize: '0.7rem',
+                        color: 'var(--cream-dim)',
+                        marginTop: 4,
+                      }}
+                    >
+                      Código que viene en el frasco y la caja del perfume. Ayuda a verificar originalidad y frescura.
+                    </div>
                   </div>
 
                   <div className="form-grid-2">
