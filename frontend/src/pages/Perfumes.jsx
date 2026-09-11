@@ -13,7 +13,6 @@ const emptyPerfume = {
   costo_envio: 0,
   piezas_envio: 1,
   notas: '',
-  batch_code: '',
 }
 
 const emptyVenta = {
@@ -44,8 +43,9 @@ export default function Perfumes() {
   })
   const [editAbonoId, setEditAbonoId] = useState(null)
 
-  // Estados para Batch Code
+  // Estados para Batch Code (verificador independiente)
   const [batchCodeInput, setBatchCodeInput] = useState('')
+  const [batchCodeMarca, setBatchCodeMarca] = useState('')
   const [batchCodeResult, setBatchCodeResult] = useState(null)
   const [batchCodeLoading, setBatchCodeLoading] = useState(false)
 
@@ -124,7 +124,7 @@ export default function Perfumes() {
     (parseInt(ventaForm.cantidad, 10) || 1)
 
   // ============================================================
-  // FUNCION PARA VERIFICAR BATCH CODE
+  // VERIFICAR BATCH CODE (INDEPENDIENTE)
   // ============================================================
   const verificarBatchCode = async () => {
     if (!batchCodeInput.trim()) {
@@ -132,42 +132,26 @@ export default function Perfumes() {
       return
     }
 
+    if (!batchCodeMarca.trim()) {
+      setBatchCodeResult({ error: 'Escribe la marca del perfume' })
+      return
+    }
+
     setBatchCodeLoading(true)
     setBatchCodeResult(null)
 
     try {
-      const codigo = batchCodeInput.trim().toUpperCase()
+      const res = await api.post('/verificar-batch', {
+        marca: batchCodeMarca.trim(),
+        codigo: batchCodeInput.trim()
+      })
 
-      // Validación básica: los batch codes tienen entre 4 y 12 caracteres alfanuméricos
-      if (!/^[A-Z0-9]{4,12}$/.test(codigo)) {
-        setBatchCodeResult({
-          error: 'Formato inválido',
-          mensaje: 'El batch code debe tener entre 4 y 12 caracteres alfanuméricos (letras y números).'
-        })
-        setBatchCodeLoading(false)
+      if (res.error) {
+        setBatchCodeResult({ error: res.error })
         return
       }
 
-      // Verificar si ya existe en tu inventario
-      const perfumeExistente = perfumes.find(
-        p => p.batch_code && p.batch_code.toUpperCase() === codigo
-      )
-
-      if (perfumeExistente) {
-        setBatchCodeResult({
-          exito: true,
-          mensaje: '✅ Código registrado en tu inventario',
-          perfume: perfumeExistente.nombre,
-          proveedor: perfumeExistente.proveedor,
-          batch_code: perfumeExistente.batch_code
-        })
-      } else {
-        setBatchCodeResult({
-          advertencia: true,
-          mensaje: '⚠️ Código válido pero no está registrado en tu inventario',
-          sugerencia: 'Si este perfume es nuevo, regístralo para llevar control.'
-        })
-      }
+      setBatchCodeResult(res)
     } catch (err) {
       setBatchCodeResult({ error: 'Error al verificar: ' + err.message })
     } finally {
@@ -191,7 +175,6 @@ export default function Perfumes() {
         p.piezas_compradas ??
         1,
       notas: p.notas || '',
-      batch_code: p.batch_code || '',
     })
 
     setModal('perfume')
@@ -459,13 +442,14 @@ export default function Perfumes() {
             onClick={() => {
               setError('')
               setBatchCodeInput('')
+              setBatchCodeMarca('')
               setBatchCodeResult(null)
               setModal('batch')
             }}
             style={{ borderColor: 'var(--gold)' }}
           >
             <Shield size={14} />
-            Batch Code
+            Verificar Batch Code
           </button>
 
           <button
@@ -628,7 +612,6 @@ export default function Perfumes() {
                 <tr>
                   <th>Perfume</th>
                   <th>Proveedor</th>
-                  <th>Batch Code</th>
                   <th>Costo prov.</th>
                   <th>Envío/u</th>
                   <th>Costo/u</th>
@@ -655,10 +638,6 @@ export default function Perfumes() {
 
                     <td>
                       {p.proveedor || '—'}
-                    </td>
-
-                    <td style={{ fontSize: '0.75rem', color: 'var(--cream-dim)' }}>
-                      {p.batch_code || '—'}
                     </td>
 
                     <td>
@@ -781,7 +760,7 @@ export default function Perfumes() {
         )}
       </div>
 
-      {/* VENTAS - SOLO PENDIENTES (NO LIQUIDADAS) */}
+      {/* VENTAS PENDIENTES */}
       <div
         className="card"
         style={{ marginTop: 20 }}
@@ -1060,17 +1039,32 @@ export default function Perfumes() {
                 <>
                   <div className="form-group">
                     <label className="form-label">
-                      Código de lote (Batch Code)
+                      Marca del perfume *
+                    </label>
+                    <input
+                      className="form-input"
+                      value={batchCodeMarca}
+                      onChange={e => setBatchCodeMarca(e.target.value)}
+                      placeholder="Ej: Dior, Versace, YSL, Tom Ford..."
+                      autoFocus
+                    />
+                    <div style={{ fontSize: '0.7rem', color: 'var(--cream-dim)', marginTop: 4 }}>
+                      Tenemos reglas especiales para Dior, Coty, L'Oréal y Estée Lauder.
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      Código de lote (Batch Code) *
                     </label>
                     <input
                       className="form-input"
                       value={batchCodeInput}
                       onChange={e => setBatchCodeInput(e.target.value)}
-                      placeholder="Ej: 9X01AB"
-                      autoFocus
+                      placeholder="Ej: 4X01, 0124, S123..."
                     />
                     <div style={{ fontSize: '0.7rem', color: 'var(--cream-dim)', marginTop: 4 }}>
-                      Busca el código en el fondo del frasco o en la caja del perfume.
+                      Busca el código en el fondo del frasco o en la caja. Debe coincidir en ambos.
                     </div>
                   </div>
 
@@ -1088,17 +1082,17 @@ export default function Perfumes() {
                       style={{
                         padding: 14,
                         borderRadius: 6,
-                        background: batchCodeResult.error
+                        background: batchCodeResult.error || batchCodeResult.valido === false
                           ? 'rgba(196, 92, 92, 0.1)'
-                          : batchCodeResult.advertencia
-                            ? 'rgba(201, 168, 76, 0.1)'
-                            : 'rgba(74, 140, 106, 0.1)',
+                          : batchCodeResult.valido === true
+                            ? 'rgba(74, 140, 106, 0.1)'
+                            : 'rgba(201, 168, 76, 0.1)',
                         border: `1px solid ${
-                          batchCodeResult.error
+                          batchCodeResult.error || batchCodeResult.valido === false
                             ? '#c45c5c'
-                            : batchCodeResult.advertencia
-                              ? '#c9a84c'
-                              : '#4a8c6a'
+                            : batchCodeResult.valido === true
+                              ? '#4a8c6a'
+                              : '#c9a84c'
                         }`,
                         fontSize: '0.85rem',
                         lineHeight: 1.6
@@ -1107,37 +1101,39 @@ export default function Perfumes() {
                       {batchCodeResult.error && (
                         <div style={{ color: '#c45c5c' }}>
                           <strong>❌ {batchCodeResult.error}</strong>
-                          {batchCodeResult.mensaje && <div>{batchCodeResult.mensaje}</div>}
                         </div>
                       )}
 
-                      {batchCodeResult.exito && (
+                      {batchCodeResult.valido === true && (
                         <div style={{ color: '#4a8c6a' }}>
                           <strong>{batchCodeResult.mensaje}</strong>
-                          <div>Perfume: {batchCodeResult.perfume}</div>
-                          <div>Proveedor: {batchCodeResult.proveedor || '—'}</div>
+                          <div style={{ marginTop: 8 }}>
+                            <div><strong>Marca:</strong> {batchCodeResult.marca}</div>
+                            <div><strong>Grupo:</strong> {batchCodeResult.grupo}</div>
+                            <div><strong>Código:</strong> {batchCodeResult.codigo}</div>
+                            <div><strong>Fecha estimada:</strong> {batchCodeResult.fecha_estimada}</div>
+                          </div>
                         </div>
                       )}
 
-                      {batchCodeResult.advertencia && (
+                      {batchCodeResult.valido === false && (
+                        <div style={{ color: '#c45c5c' }}>
+                          <strong>❌ {batchCodeResult.mensaje}</strong>
+                          <div style={{ marginTop: 8 }}>
+                            <div><strong>Marca:</strong> {batchCodeResult.marca}</div>
+                            {batchCodeResult.grupo && <div><strong>Grupo:</strong> {batchCodeResult.grupo}</div>}
+                            <div><strong>Código:</strong> {batchCodeResult.codigo}</div>
+                          </div>
+                        </div>
+                      )}
+
+                      {batchCodeResult.reconocido === false && (
                         <div style={{ color: '#c9a84c' }}>
-                          <strong>{batchCodeResult.mensaje}</strong>
-                          {batchCodeResult.sugerencia && <div>{batchCodeResult.sugerencia}</div>}
+                          <strong>⚠️ {batchCodeResult.mensaje}</strong>
                         </div>
                       )}
                     </div>
                   )}
-
-                  <div style={{ marginTop: 16, textAlign: 'center' }}>
-                    <a
-                      href={`https://www.checkfresh.com/search.html?q=${batchCodeInput}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: 'var(--gold)', fontSize: '0.8rem' }}
-                    >
-                      Verificar en CheckFresh.com →
-                    </a>
-                  </div>
                 </>
               )}
 
@@ -1315,31 +1311,6 @@ export default function Perfumes() {
                       }
                       placeholder="Nombre del proveedor"
                     />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">
-                      Batch Code (código de lote)
-                    </label>
-
-                    <input
-                      className="form-input"
-                      value={perfumeForm.batch_code}
-                      onChange={e =>
-                        sp('batch_code', e.target.value)
-                      }
-                      placeholder="Ej: 9X01AB"
-                    />
-
-                    <div
-                      style={{
-                        fontSize: '0.7rem',
-                        color: 'var(--cream-dim)',
-                        marginTop: 4,
-                      }}
-                    >
-                      Código que viene en el frasco y la caja del perfume.
-                    </div>
                   </div>
 
                   <div className="form-grid-2">
