@@ -18,10 +18,15 @@ export default function Fondo() {
   const [form, setForm] = useState(emptyMovimiento);
   const [error, setError] = useState('');
   const [editId, setEditId] = useState(null);
+  const [resumen, setResumen] = useState(null);
 
   const load = async () => {
-    const data = await api.get('/fondo/movimientos');
-    setMovimientos(data);
+    const [movs, res] = await Promise.all([
+      api.get('/fondo/movimientos'),
+      api.get('/resumen')
+    ]);
+    setMovimientos(movs);
+    setResumen(res);
   };
 
   useEffect(() => { load(); }, []);
@@ -44,12 +49,7 @@ export default function Fondo() {
   } else if (saldoActual === 0) {
     mensajeFondo = `El fondo está en $0. No hay dinero disponible.`;
     colorMensaje = 'var(--cream-dim)';
-  } else {
-    mensajeFondo = `Faltan ${fmt(Math.abs(saldoActual))} por devolver al fondo.`;
-    colorMensaje = '#c45c5c';
-  }
-
-  // --- NUEVA FUNCIÓN PARA ABRIR EDICIÓN ---
+  } 
   const openEdit = (m) => {
     setEditId(m.id);
     setForm({
@@ -70,16 +70,26 @@ export default function Fondo() {
       return;
     }
 
+    // Si es un retiro, verificar disponibilidad en caja
+    if (form.tipo === 'retiro' && resumen) {
+      const monto = Number(form.monto);
+      if (monto > resumen.dinero_en_caja) {
+        setError(`No hay suficiente dinero en caja. Disponible: $${resumen.dinero_en_caja.toFixed(2)}`);
+        return;
+      }
+    }
+
     let res;
     if (editId) {
-      // Si hay editId, es una ACTUALIZACIÓN (PUT)
       res = await api.put(`/fondo/movimientos/${editId}`, form);
     } else {
-      // Si no hay editId, es un nuevo registro (POST)
       res = await api.post('/fondo/movimientos', form);
     }
 
-    if (res.error) { setError(res.error); return; }
+    if (res.error) { 
+      setError(res.error); 
+      return; 
+    }
     await load();
     setShowModal(false);
     setEditId(null);
@@ -115,7 +125,7 @@ export default function Fondo() {
       {/* ESTADÍSTICAS Y RESUMEN DEL FONDO */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 28 }}>
         <div className="stat-card">
-          <div className="label">Dinero en Fondo</div> {/* CAMBIADO EL NOMBRE */}
+          <div className="label">Dinero en Fondo</div>
           <div className="stat-value" style={{ color: saldoActual >= 0 ? '#4a8c6a' : '#c45c5c' }}>
             {fmt(saldoActual)}
           </div>
@@ -130,29 +140,23 @@ export default function Fondo() {
         </div>
       </div>
 
-      {/* MENSAJE DE "TE SOBRA / TE FALTA" */}
-      <div className="card" style={{ 
-        marginBottom: 24, 
-        padding: '18px 24px',
-        borderColor: saldoActual < 0 ? '#c45c5c' : '#4a8c6a',
-        borderWidth: '2px'
-      }}>
-        <div className="flex-between" style={{ alignItems: 'center' }}>
-          <div>
-            <div className="label" style={{ marginBottom: 4 }}>Estado del Fondo</div>
-            <div style={{ 
-              fontSize: '1.2rem', 
-              fontWeight: 500,
-              color: colorMensaje
-            }}>
-              {mensajeFondo}
-            </div>
-          </div>
-          <div style={{ fontSize: '2rem', lineHeight: 1 }}>
-            {saldoActual < 0 ? '⚠️' : '✅'}
+      {/* INFO DE DISPONIBILIDAD EN CAJA */}
+      {resumen && (
+        <div className="card" style={{ 
+          marginBottom: 24, 
+          padding: '12px 18px',
+          backgroundColor: 'var(--noir-bg)',
+          borderColor: 'var(--gold)'
+        }}>
+          <div style={{ fontSize: '0.85rem', color: 'var(--cream-dim)' }}>
+            <strong style={{ color: 'var(--gold)' }}>Dinero disponible en caja para retirar:</strong>{' '}
+            <span style={{ color: '#4a8c6a', fontWeight: 600 }}>{fmt(resumen.dinero_en_caja)}</span>
+            <span style={{ display: 'block', fontSize: '0.7rem', marginTop: 4 }}>
+              * Los retiros del fondo solo pueden ser por el dinero que ya está en caja
+            </span>
           </div>
         </div>
-      </div>
+      )}
 
       {/* HISTORIAL DE MOVIMIENTOS */}
       <div className="card">
@@ -192,7 +196,6 @@ export default function Fondo() {
                     </td>
                     <td className="td-muted">{m.notas || '—'}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>
-                      {/* BOTÓN DE EDITAR (NUEVO) */}
                       <button className="btn-icon" title="Editar" onClick={() => openEdit(m)}>
                         <Pencil size={14} />
                       </button>
@@ -226,7 +229,7 @@ export default function Fondo() {
                   className="form-input" 
                   value={form.concepto} 
                   onChange={e => sf('concepto', e.target.value)} 
-                  placeholder="Ej: Préstamo para viaje, Fondos para perfumes..."
+                  placeholder="Ej: Compra de perfumes, Préstamo a socio..."
                   autoFocus
                 />
               </div>
@@ -249,6 +252,11 @@ export default function Fondo() {
                   />
                 </div>
               </div>
+              {form.tipo === 'retiro' && resumen && (
+                <div style={{ fontSize: '0.75rem', color: 'var(--cream-dim)', marginBottom: 12 }}>
+                  Disponible en caja: <strong style={{ color: '#4a8c6a' }}>{fmt(resumen.dinero_en_caja)}</strong>
+                </div>
+              )}
               <div className="form-group">
                 <label className="form-label">Fecha *</label>
                 <input type="date" className="form-input" value={form.fecha} onChange={e => sf('fecha', e.target.value)} />
