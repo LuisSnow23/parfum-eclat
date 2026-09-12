@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Trash2, ShoppingCart, Package, CreditCard, Pencil } from 'lucide-react'
+import { Plus, X, Trash2, ShoppingCart, Package, CreditCard, Pencil, Clock } from 'lucide-react'
 import { api, fmt, fmtDate } from '../api'
 
 const hoy = new Date().toISOString().split('T')[0]
@@ -36,7 +36,24 @@ export default function Perfumes() {
   const [error, setError] = useState('')
   const [perfumeForm, setPerfumeForm] = useState(emptyPerfume)
   const [ventaForm, setVentaForm] = useState(emptyVenta)
-  const [abonoForm, setAbonoForm] = useState({ monto: '', fecha: hoy, notas: '' })
+  const [abonoForm, setAbonoForm] = useState({
+    monto: '',
+    fecha: hoy,
+    notas: '',
+  })
+  const [editAbonoId, setEditAbonoId] = useState(null)
+
+  // Estados para paginación
+  const [paginaActual, setPaginaActual] = useState(1)
+  const [perfumesPorPagina] = useState(10)
+
+  // Filtros para el historial - SIN estado
+  const [historialFiltro, setHistorialFiltro] = useState({
+    cliente: '',
+    perfume: '',
+    fechaInicio: '',
+    fechaFin: ''
+  })
 
   const load = async () => {
     const [r, p, v] = await Promise.all([
@@ -44,39 +61,78 @@ export default function Perfumes() {
       api.get('/perfumes'),
       api.get('/ventas'),
     ])
+
     setResumen(r)
     setPerfumes(p)
     setVentas(v)
+    setPaginaActual(1)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+  }, [])
 
-  const sp = (k, v) => setPerfumeForm(f => ({ ...f, [k]: v }))
-  const sv = (k, v) => setVentaForm(f => ({ ...f, [k]: v }))
+  const sp = (k, v) =>
+    setPerfumeForm(f => ({
+      ...f,
+      [k]: v,
+    }))
 
-  // Al cambiar piezas compradas, si piezas_envio era igual al valor anterior, sincronizar
+  const sv = (k, v) =>
+    setVentaForm(f => ({
+      ...f,
+      [k]: v,
+    }))
+
   const setPiezas = (val) => {
     const n = parseInt(val, 10) || 1
+
     setPerfumeForm(f => ({
       ...f,
       piezas_compradas: n,
-      piezas_envio: f.piezas_envio === f.piezas_compradas || !f.piezas_envio ? n : f.piezas_envio,
+      piezas_envio:
+        f.piezas_envio === f.piezas_compradas || !f.piezas_envio
+          ? n
+          : f.piezas_envio,
     }))
   }
 
   const envioU = () => {
     const env = parseFloat(perfumeForm.costo_envio) || 0
-    const n = Math.max(parseInt(perfumeForm.piezas_envio, 10) || 1, 1)
+    const n = Math.max(
+      parseInt(perfumeForm.piezas_envio, 10) || 1,
+      1
+    )
+
     return env / n
   }
 
-  const costoU = () => (parseFloat(perfumeForm.precio_proveedor) || 0) + envioU()
-  const gananciaU = () => (parseFloat(perfumeForm.precio_publico) || 0) - costoU()
-  const totalVenta = () => (parseFloat(ventaForm.precio_unitario) || 0) * (parseInt(ventaForm.cantidad, 10) || 1)
+  const costoU = () =>
+    (parseFloat(perfumeForm.precio_proveedor) || 0) + envioU()
+
+  const gananciaU = () =>
+    (parseFloat(perfumeForm.precio_publico) || 0) - costoU()
+
+  const totalVenta = () =>
+    (parseFloat(ventaForm.precio_unitario) || 0) *
+    (parseInt(ventaForm.cantidad, 10) || 1)
+
+  // Calcular paginación
+  const indexUltimoPerfume = paginaActual * perfumesPorPagina
+  const indexPrimerPerfume = indexUltimoPerfume - perfumesPorPagina
+  const perfumesPaginados = perfumes.slice(indexPrimerPerfume, indexUltimoPerfume)
+  const totalPaginas = Math.ceil(perfumes.length / perfumesPorPagina)
+
+  const cambiarPagina = (numero) => {
+    if (numero >= 1 && numero <= totalPaginas) {
+      setPaginaActual(numero)
+    }
+  }
 
   const openEditPerfume = (p) => {
     setError('')
     setEditId(p.id)
+
     setPerfumeForm({
       nombre: p.nombre || '',
       proveedor: p.proveedor || '',
@@ -84,20 +140,38 @@ export default function Perfumes() {
       precio_publico: p.precio_publico ?? '',
       piezas_compradas: p.piezas_compradas ?? 1,
       costo_envio: p.costo_envio ?? 0,
-      piezas_envio: p.piezas_envio ?? p.piezas_compradas ?? 1,
+      piezas_envio:
+        p.piezas_envio ??
+        p.piezas_compradas ??
+        1,
       notas: p.notas || '',
     })
+
     setModal('perfume')
   }
 
   const submitPerfume = async () => {
     setError('')
-    if (!perfumeForm.nombre) { setError('Nombre obligatorio'); return }
-    if (perfumeForm.precio_proveedor === '') { setError('Costo de proveedor obligatorio'); return }
+
+    if (!perfumeForm.nombre) {
+      setError('Nombre obligatorio')
+      return
+    }
+
+    if (perfumeForm.precio_proveedor === '') {
+      setError('Costo de proveedor obligatorio')
+      return
+    }
+
     const res = editId
       ? await api.put(`/perfumes/${editId}`, perfumeForm)
       : await api.post('/perfumes', perfumeForm)
-    if (res.error) { setError(res.error); return }
+
+    if (res.error) {
+      setError(res.error)
+      return
+    }
+
     await load()
     setModal(null)
     setEditId(null)
@@ -107,6 +181,7 @@ export default function Perfumes() {
   const openEditVenta = (v) => {
     setError('')
     setEditId(v.id)
+
     setVentaForm({
       perfume_id: String(v.perfume_id),
       cliente: v.cliente || '',
@@ -117,182 +192,543 @@ export default function Perfumes() {
       fecha: v.fecha || hoy,
       notas: v.notas || '',
     })
+
     setModal('venta')
   }
 
   const submitVenta = async () => {
     setError('')
+
     if (!ventaForm.perfume_id || !ventaForm.precio_unitario) {
       setError('Selecciona perfume y precio de venta')
       return
     }
+
     const total = totalVenta()
-    if (editId) {
-      const res = await api.put(`/ventas/${editId}`, {
-        ...ventaForm,
-        total_venta: total,
-      })
-      if (res.error) { setError(res.error); return }
-    } else {
-      const res = await api.post('/ventas', {
-        ...ventaForm,
-        total_venta: total,
-        abonado: ventaForm.tipo_pago === 'contado'
-          ? total
-          : (ventaForm.abonado === '' ? 0 : Number(ventaForm.abonado)),
-      })
-      if (res.error) { setError(res.error); return }
+    const abonadoInicial = ventaForm.tipo_pago === 'contado' ? total : (Number(ventaForm.abonado) || 0)
+
+    const res = await api.post('/ventas', {
+      ...ventaForm,
+      total_venta: total,
+      abonado: 0,
+    })
+
+    if (res.error) {
+      setError(res.error)
+      return
     }
+
+    if (abonadoInicial > 0) {
+      const abonoRes = await api.post(`/ventas/${res.id}/abonos`, {
+        monto: abonadoInicial,
+        fecha: ventaForm.fecha || hoy,
+        notas: ventaForm.tipo_pago === 'contado' ? 'Pago completo' : 'Abono inicial'
+      })
+
+      if (abonoRes.error) {
+        setError(abonoRes.error)
+        return
+      }
+    }
+
     await load()
     setModal(null)
     setEditId(null)
-    setVentaForm({ ...emptyVenta, fecha: hoy })
+    setVentaForm({
+      ...emptyVenta,
+      fecha: hoy,
+    })
   }
 
   const openAbono = (v) => {
     setVentaAbono(v)
-    setAbonoForm({ monto: '', fecha: hoy, notas: '' })
+    setEditAbonoId(null)
+    setAbonoForm({
+      monto: '',
+      fecha: hoy,
+      notas: '',
+    })
+
+    setError('')
+    setModal('abono')
+  }
+
+  const openEditAbono = (abono, venta) => {
+    setVentaAbono(venta)
+    setEditAbonoId(abono.id)
+    setAbonoForm({
+      monto: abono.monto,
+      fecha: abono.fecha || hoy,
+      notas: abono.notas || '',
+    })
+
     setError('')
     setModal('abono')
   }
 
   const submitAbono = async () => {
     setError('')
+
     if (!abonoForm.monto || Number(abonoForm.monto) <= 0) {
       setError('Monto inválido')
       return
     }
-    const res = await api.post(`/ventas/${ventaAbono.id}/abonos`, abonoForm)
-    if (res.error) { setError(res.error); return }
+
+    let res
+    if (editAbonoId) {
+      res = await api.put(`/abonos/${editAbonoId}`, abonoForm)
+    } else {
+      res = await api.post(`/ventas/${ventaAbono.id}/abonos`, abonoForm)
+    }
+
+    if (res.error) {
+      setError(res.error)
+      return
+    }
+
     await load()
     setModal(null)
     setVentaAbono(null)
+    setEditAbonoId(null)
   }
 
   const eliminar = async (tipo, id) => {
-    if (!confirm('¿Eliminar? Esta acción no se puede deshacer.')) return
+    if (!confirm('¿Eliminar? Esta acción no se puede deshacer.')) {
+      return
+    }
+
     const res = await api.delete(`/${tipo}/${id}`)
-    if (res.error) alert(res.error)
+
+    if (res.error) {
+      alert(res.error)
+    }
+
     load()
   }
 
+  // Ventas NO liquidadas (para la tabla principal)
+  const ventasPendientes = ventas.filter(v => !v.liquidado)
+
+  // Ventas liquidadas (para el historial)
+  const ventasLiquidadas = ventas.filter(v => v.liquidado)
+
+  // Filtrar ventas para el historial - SIN filtro de estado
+  const ventasFiltradas = ventasLiquidadas.filter(v => {
+    if (historialFiltro.cliente && !v.cliente?.toLowerCase().includes(historialFiltro.cliente.toLowerCase())) {
+      return false
+    }
+    if (historialFiltro.perfume && !v.perfume_nombre?.toLowerCase().includes(historialFiltro.perfume.toLowerCase())) {
+      return false
+    }
+    if (historialFiltro.fechaInicio && v.fecha < historialFiltro.fechaInicio) return false
+    if (historialFiltro.fechaFin && v.fecha > historialFiltro.fechaFin) return false
+    return true
+  })
+
   if (!resumen) {
-    return <div className="flex-center" style={{ height: 280, color: 'var(--cream-dim)' }}>Cargando...</div>
+    return (
+      <div
+        className="flex-center"
+        style={{
+          height: 280,
+          color: 'var(--cream-dim)',
+        }}
+      >
+        Cargando...
+      </div>
+    )
   }
 
-  // Cálculo del Total por cobrar sumando los 'resto' de todas las ventas
-  const totalPorCobrarGlobal = ventas.reduce((acc, venta) => acc + (venta.resto || 0), 0);
+  const totalPorCobrarGlobal = ventasPendientes.reduce(
+    (acc, venta) => acc + (venta.resto || 0),
+    0
+  )
 
   return (
     <div>
       <div className="page-header">
         <div>
           <div className="ornament">✦ ✦ ✦</div>
-          <h1 className="page-title" style={{ marginTop: 8 }}>Mis <span>Perfumes</span></h1>
-          <div className="label" style={{ marginTop: 6 }}>Control estricto de costos, ventas y dinero</div>
+
+          <h1
+            className="page-title"
+            style={{ marginTop: 8 }}
+          >
+            Mis <span>Perfumes</span>
+          </h1>
+
+          <div
+            className="label"
+            style={{ marginTop: 6 }}
+          >
+            Control estricto de costos, ventas y dinero
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: 10,
+          }}
+        >
           <button
             className="btn btn-outline"
             disabled={!perfumes.some(p => p.stock > 0)}
-            onClick={() => { setError(''); setEditId(null); setVentaForm({ ...emptyVenta, fecha: hoy }); setModal('venta') }}
+            onClick={() => {
+              setError('')
+              setEditId(null)
+
+              setVentaForm({
+                ...emptyVenta,
+                fecha: hoy,
+              })
+
+              setModal('venta')
+            }}
           >
-            <ShoppingCart size={14} /> Vender
+            <ShoppingCart size={14} />
+            Vender
           </button>
+
+          <button
+            className="btn btn-outline"
+            onClick={() => {
+              setError('')
+              setHistorialFiltro({ cliente: '', perfume: '', fechaInicio: '', fechaFin: '' })
+              setModal('historial')
+            }}
+            style={{ borderColor: 'var(--gold)' }}
+          >
+            <Clock size={14} />
+            Historial de ventas
+          </button>
+
           <button
             className="btn btn-gold"
-            onClick={() => { setError(''); setEditId(null); setPerfumeForm(emptyPerfume); setModal('perfume') }}
+            onClick={() => {
+              setError('')
+              setEditId(null)
+              setPerfumeForm(emptyPerfume)
+              setModal('perfume')
+            }}
           >
-            <Plus size={14} /> Registrar perfume
+            <Plus size={14} />
+            Registrar perfume
           </button>
         </div>
       </div>
 
-      {/* CONTROL DE DINERO */}
+      {/* DASHBOARD MEJORADO */}
       <div className="stats-grid">
-        <Kpi label="Dinero en caja (cobrado)" value={fmt(resumen.dinero_en_caja)} color="#4a8c6a" />
-        {/* REEMPLAZAMOS LA TARJETA DE POR COBRAR POR LA SUMA DE RESTAS */}
-        <Kpi label="Por cobrar (de ventas)" value={fmt(totalPorCobrarGlobal)} color="#c9a84c" />
-        <Kpi label="Ganancia realizada" value={fmt(resumen.ganancia_realizada)} color={resumen.ganancia_realizada >= 0 ? '#4a8c6a' : '#c45c5c'} />
-        <Kpi label="Capital en inventario" value={fmt(resumen.capital_en_inventario)} />
-        <Kpi label="Capital total invertido" value={fmt(resumen.capital_invertido)} />
-        <Kpi label="Stock (piezas)" value={`${resumen.stock}`} />
-        <Kpi label="Valor stock a público" value={fmt(resumen.valor_stock_publico)} color="#c9a84c" />
+        {/* CAPITAL INVERTIDO */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #3b82f6' }}>
+          <div className="label" style={{ color: '#3b82f6' }}>
+            💰 Capital invertido
+          </div>
+          <div className="stat-value" style={{ color: '#3b82f6', fontSize: '1.3rem' }}>
+            {fmt(resumen.capital_invertido)}
+          </div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            Todo lo que has gastado
+          </div>
+        </div>
+
+        {/* VALOR PÚBLICO TOTAL */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #eab308' }}>
+          <div className="label" style={{ color: '#eab308' }}>
+            🏷️ Valor público total
+          </div>
+          <div className="stat-value" style={{ color: '#eab308', fontSize: '1.3rem' }}>
+            {fmt(resumen.valor_publico_total)}
+          </div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            Precio de venta de TODO
+          </div>
+        </div>
+
+        {/* GANANCIA TOTAL */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #22c55e' }}>
+          <div className="label" style={{ color: '#22c55e' }}>
+            📈 Ganancia total
+          </div>
+          <div className="stat-value" style={{ color: '#22c55e', fontSize: '1.3rem' }}>
+            {fmt(resumen.ganancia_total)}
+          </div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            {resumen.ganancia_total > 0 ? '✅ Ganancia positiva' : '❌ Pérdida'}
+          </div>
+        </div>
+
+        {/* RENTABILIDAD */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #8b5cf6' }}>
+          <div className="label" style={{ color: '#8b5cf6' }}>
+            📊 Rentabilidad
+          </div>
+          <div className="stat-value" style={{ color: '#8b5cf6', fontSize: '1.3rem' }}>
+            {resumen.capital_invertido > 0
+              ? `${((resumen.ganancia_total / resumen.capital_invertido) * 100).toFixed(1)}%`
+              : '0%'}
+          </div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            Ganancia / Inversión × 100
+          </div>
+        </div>
+
+        {/* STOCK */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #f59e0b' }}>
+          <div className="label" style={{ color: '#f59e0b' }}>
+            📦 Stock (piezas)
+          </div>
+          <div className="stat-value" style={{ color: '#f59e0b', fontSize: '1.3rem' }}>
+            {resumen.stock}
+          </div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            Piezas en inventario
+          </div>
+        </div>
+
+        {/* DINERO EN CAJA */}
+        <Kpi
+          label="💰 Dinero en caja"
+          value={fmt(resumen.dinero_en_caja)}
+          color="#4a8c6a"
+        />
+
+        {/* POR COBRAR */}
+        <Kpi
+          label="📋 Por cobrar"
+          value={fmt(resumen.por_cobrar)}
+          color="#c9a84c"
+        />
       </div>
 
-      <div className="card" style={{ marginBottom: 16, padding: '14px 18px', fontSize: '0.8rem', color: 'var(--cream-dim)', lineHeight: 1.6 }}>
-        <strong style={{ color: 'var(--gold)' }}>Cómo leer los números:</strong>{' '}
-        <em>Dinero en caja</em> = lo que ya te pagaron los clientes.{' '}
-        <em>Por cobrar</em> = Suma de los saldos restantes de TODAS las ventas.{' '}
-        <em>Capital en inventario</em> = lo que te costó lo que aún no vendes.{' '}
-        <em>Ganancia realizada</em> = cobrado − costo de lo ya vendido.
+      <div
+        className="card"
+        style={{
+          marginBottom: 16,
+          padding: '14px 18px',
+          fontSize: '0.8rem',
+          color: 'var(--cream-dim)',
+          lineHeight: 1.6,
+        }}
+      >
+        <strong style={{ color: 'var(--gold)' }}>
+          Resumen:
+        </strong>{' '}
+        Has invertido <strong style={{ color: '#3b82f6' }}>${fmt(resumen.capital_invertido)}</strong> y has generado una ganancia de <strong style={{ color: '#22c55e' }}>${fmt(resumen.ganancia_total)}</strong>, lo que representa una rentabilidad del <strong style={{ color: '#8b5cf6' }}>
+          {resumen.capital_invertido > 0
+            ? `${((resumen.ganancia_total / resumen.capital_invertido) * 100).toFixed(1)}%`
+            : '0%'}
+        </strong>.
+        <br />
+        El valor total de tu negocio a precio público es de <strong style={{ color: '#eab308' }}>${fmt(resumen.valor_publico_total)}</strong>.
+        <br />
+        Tienes <strong style={{ color: '#f59e0b' }}>{resumen.stock} piezas</strong> en inventario.
       </div>
 
       {error && !modal && (
-        <div className="card" style={{ borderColor: '#c45c5c', color: '#c45c5c', marginBottom: 16, padding: '12px 16px' }}>{error}</div>
+        <div
+          className="card"
+          style={{
+            borderColor: '#c45c5c',
+            color: '#c45c5c',
+            marginBottom: 16,
+            padding: '12px 16px',
+          }}
+        >
+          {error}
+        </div>
       )}
 
-      {/* INVENTARIO (YA SIN LAS COLUMNAS COBRADO Y POR COBRAR) */}
+      {/* INVENTARIO CON PAGINACIÓN */}
       <div className="card">
-        <div className="section-title mb-4">Inventario</div>
+        <div className="section-title mb-4">
+          Inventario ({perfumes.length} perfumes)
+        </div>
+
         {perfumes.length === 0 ? (
           <div className="empty-state">
-            <Package size={28} style={{ opacity: 0.4, marginBottom: 8 }} />
+            <Package
+              size={28}
+              style={{
+                opacity: 0.4,
+                marginBottom: 8,
+              }}
+            />
+
             <p>Sin perfumes. Registra el primero.</p>
           </div>
         ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Perfume</th>
-                  <th>Proveedor</th>
-                  <th>Costo prov.</th>
-                  <th>Envío/u</th>
-                  <th>Costo/u</th>
-                  <th>P. público</th>
-                  <th>Ganancia/u</th>
-                  <th>Cant.</th>
-                  <th>Vend.</th>
-                  <th>Stock</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {perfumes.map(p => (
-                  <tr key={p.id}>
-                    <td style={{ color: 'var(--cream)', fontWeight: 500 }}>{p.nombre}</td>
-                    <td>{p.proveedor || '—'}</td>
-                    <td>{fmt(p.precio_proveedor)}</td>
-                    <td>
-                      {fmt(p.envio_unitario)}
-                      <span style={{ display: 'block', fontSize: '0.65rem', color: 'var(--cream-dim)' }}>
-                        (lote {fmt(p.costo_envio)} / {p.piezas_envio})
-                      </span>
-                    </td>
-                    <td>{fmt(p.costo_unitario)}</td>
-                    <td className="td-gold">{fmt(p.precio_publico)}</td>
-                    <td className={p.ganancia_unitaria >= 0 ? 'td-green' : 'td-red'}>{fmt(p.ganancia_unitaria)}</td>
-                    <td>{p.piezas_compradas}</td>
-                    <td>{p.vendidos}</td>
-                    <td>{p.stock}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <button className="btn-icon" title="Editar" onClick={() => openEditPerfume(p)}><Pencil size={14} /></button>
-                      <button className="btn-icon" title="Eliminar" onClick={() => eliminar('perfumes', p.id)}><Trash2 size={14} /></button>
-                    </td>
+          <>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Perfume</th>
+                    <th>Proveedor</th>
+                    <th>Costo prov.</th>
+                    <th>Envío/u</th>
+                    <th>Costo/u</th>
+                    <th>P. público</th>
+                    <th>Ganancia/u</th>
+                    <th>Cant.</th>
+                    <th>Vend.</th>
+                    <th>Stock</th>
+                    <th></th>
                   </tr>
+                </thead>
+
+                <tbody>
+                  {perfumesPaginados.map(p => (
+                    <tr key={p.id}>
+                      <td
+                        style={{
+                          color: 'var(--cream)',
+                          fontWeight: 500,
+                        }}
+                      >
+                        {p.nombre}
+                      </td>
+
+                      <td>
+                        {p.proveedor || '—'}
+                      </td>
+
+                      <td>
+                        {fmt(p.precio_proveedor)}
+                      </td>
+
+                      <td>
+                        {fmt(p.envio_unitario)}
+
+                        <span
+                          style={{
+                            display: 'block',
+                            fontSize: '0.65rem',
+                            color: 'var(--cream-dim)',
+                          }}
+                        >
+                          (lote {fmt(p.costo_envio)} / {p.piezas_envio})
+                        </span>
+                      </td>
+
+                      <td>
+                        {fmt(p.costo_unitario)}
+                      </td>
+
+                      <td className="td-gold">
+                        {fmt(p.precio_publico)}
+                      </td>
+
+                      <td
+                        className={
+                          p.ganancia_unitaria >= 0
+                            ? 'td-green'
+                            : 'td-red'
+                        }
+                      >
+                        {fmt(p.ganancia_unitaria)}
+                      </td>
+
+                      <td>
+                        {p.piezas_compradas}
+                      </td>
+
+                      <td>
+                        {p.vendidos}
+                      </td>
+
+                      <td>
+                        {p.stock}
+                      </td>
+
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <button
+                          className="btn-icon"
+                          title="Editar"
+                          onClick={() => openEditPerfume(p)}
+                        >
+                          <Pencil size={14} />
+                        </button>
+
+                        <button
+                          className="btn-icon"
+                          title="Eliminar"
+                          onClick={() =>
+                            eliminar('perfumes', p.id)
+                          }
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Paginación */}
+            {totalPaginas > 1 && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: 6,
+                marginTop: 16,
+                flexWrap: 'wrap'
+              }}>
+                <button
+                  className="btn btn-outline"
+                  onClick={() => cambiarPagina(paginaActual - 1)}
+                  disabled={paginaActual === 1}
+                  style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                >
+                  Anterior
+                </button>
+
+                {[...Array(totalPaginas)].map((_, i) => (
+                  <button
+                    key={i}
+                    className={paginaActual === i + 1 ? 'btn btn-gold' : 'btn btn-outline'}
+                    onClick={() => cambiarPagina(i + 1)}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.8rem',
+                      minWidth: '32px',
+                      ...(paginaActual === i + 1 ? { backgroundColor: 'var(--gold)', color: '#1a1a1a' } : {})
+                    }}
+                  >
+                    {i + 1}
+                  </button>
                 ))}
-              </tbody>
-            </table>
-          </div>
+
+                <button
+                  className="btn btn-outline"
+                  onClick={() => cambiarPagina(paginaActual + 1)}
+                  disabled={paginaActual === totalPaginas}
+                  style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                >
+                  Siguiente
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* VENTAS */}
-      <div className="card" style={{ marginTop: 20 }}>
-        <div className="section-title mb-4">Ventas</div>
-        {ventas.length === 0 ? (
-          <div className="empty-state"><p>Sin ventas</p></div>
+      {/* VENTAS - SOLO PENDIENTES (NO LIQUIDADAS) */}
+      <div
+        className="card"
+        style={{ marginTop: 20 }}
+      >
+        <div className="section-title mb-4">
+          Ventas pendientes ({ventasPendientes.length})
+        </div>
+
+        {ventasPendientes.length === 0 ? (
+          <div className="empty-state">
+            <p>No hay ventas pendientes. Todas están liquidadas.</p>
+          </div>
         ) : (
           <div className="table-wrap">
             <table className="data-table">
@@ -306,34 +742,93 @@ export default function Perfumes() {
                   <th>Pago</th>
                   <th>Abonado</th>
                   <th>Resta</th>
+                  <th>Notas</th>
                   <th>Estado</th>
                   <th></th>
                 </tr>
               </thead>
+
               <tbody>
-                {ventas.map(v => (
+                {ventasPendientes.map(v => (
                   <tr key={v.id}>
-                    <td>{fmtDate(v.fecha)}</td>
-                    <td style={{ color: 'var(--cream)' }}>{v.cliente || '—'}</td>
-                    <td>{v.perfume_nombre}</td>
-                    <td>{v.cantidad}</td>
-                    <td>{fmt(v.total_venta)}</td>
-                    <td>{v.tipo_pago === 'abonos' ? 'A plazos' : '1 pago'}</td>
-                    <td className="td-green">{fmt(v.abonado)}</td>
-                    <td className="td-gold">{fmt(v.resto)}</td>
                     <td>
-                      <span className={`badge ${v.liquidado ? 'badge-green' : 'badge-gold'}`}>
-                        {v.liquidado ? 'Liquidado' : `${v.pct_pagado}%`}
+                      {fmtDate(v.fecha)}
+                    </td>
+
+                    <td
+                      style={{
+                        color: 'var(--cream)',
+                      }}
+                    >
+                      {v.cliente || '—'}
+                    </td>
+
+                    <td>
+                      {v.perfume_nombre}
+                    </td>
+
+                    <td>
+                      {v.cantidad}
+                    </td>
+
+                    <td>
+                      {fmt(v.total_venta)}
+                    </td>
+
+                    <td>
+                      {v.tipo_pago === 'abonos'
+                        ? 'A plazos'
+                        : '1 pago'}
+                    </td>
+
+                    <td className="td-green">
+                      {fmt(v.abonado)}
+                    </td>
+
+                    <td className="td-gold">
+                      {fmt(v.resto)}
+                    </td>
+
+                    <td>
+                      {v.notas || '—'}
+                    </td>
+
+                    <td>
+                      <span className="badge badge-gold">
+                        {v.pct_pagado}%
                       </span>
                     </td>
+
                     <td style={{ whiteSpace: 'nowrap' }}>
-                      <button className="btn-icon" title="Editar" onClick={() => openEditVenta(v)}><Pencil size={14} /></button>
-                      {!v.liquidado && (
-                        <button className="btn-icon" title="Abono" onClick={() => openAbono(v)}>
-                          <CreditCard size={14} />
-                        </button>
-                      )}
-                      <button className="btn-icon" title="Eliminar" onClick={() => eliminar('ventas', v.id)}><Trash2 size={14} /></button>
+                      <button
+                        className="btn-icon"
+                        title="Editar venta"
+                        onClick={() =>
+                          openEditVenta(v)
+                        }
+                      >
+                        <Pencil size={14} />
+                      </button>
+
+                      <button
+                        className="btn-icon"
+                        title="Agregar abono"
+                        onClick={() =>
+                          openAbono(v)
+                        }
+                      >
+                        <CreditCard size={14} />
+                      </button>
+
+                      <button
+                        className="btn-icon"
+                        title="Eliminar venta"
+                        onClick={() =>
+                          eliminar('ventas', v.id)
+                        }
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -345,118 +840,561 @@ export default function Perfumes() {
 
       {/* HISTORIAL ABONOS */}
       {ventas.some(v => v.abonos?.length > 0) && (
-        <div className="card" style={{ marginTop: 20 }}>
-          <div className="section-title mb-4">Historial de abonos</div>
-          {ventas.filter(v => v.abonos?.length).map(v => (
-            <div key={v.id} style={{ marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid var(--noir-border)' }}>
-              <div style={{ fontSize: '0.85rem', color: 'var(--cream)', marginBottom: 6 }}>
-                {v.cliente || 'Cliente'} — {v.perfume_nombre} ({fmt(v.total_venta)})
-              </div>
-              <table className="data-table">
-                <thead>
-                  <tr><th>Fecha</th><th>Monto</th><th>Notas</th><th></th></tr>
-                </thead>
-                <tbody>
-                  {v.abonos.map(a => (
-                    <tr key={a.id}>
-                      <td>{fmtDate(a.fecha)}</td>
-                      <td className="td-green">{fmt(a.monto)}</td>
-                      <td>{a.notas || '—'}</td>
-                      <td>
-                        <button className="btn-icon" onClick={() => eliminar('abonos', a.id)}><Trash2 size={14} /></button>
-                      </td>
+        <div
+          className="card"
+          style={{ marginTop: 20 }}
+        >
+          <div className="section-title mb-4">
+            Historial de abonos
+          </div>
+
+          {ventas
+            .filter(v => v.abonos?.length)
+            .map(v => (
+              <div
+                key={v.id}
+                style={{
+                  marginBottom: 14,
+                  paddingBottom: 10,
+                  borderBottom:
+                    '1px solid var(--noir-border)',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '0.85rem',
+                    color: 'var(--cream)',
+                    marginBottom: 6,
+                  }}
+                >
+                  {v.cliente || 'Cliente'} —{' '}
+                  {v.perfume_nombre} (
+                  {fmt(v.total_venta)})
+                </div>
+
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Monto</th>
+                      <th>Notas</th>
+                      <th></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
+                  </thead>
+
+                  <tbody>
+                    {v.abonos.map(a => (
+                      <tr key={a.id}>
+                        <td>
+                          {fmtDate(a.fecha)}
+                        </td>
+
+                        <td className="td-green">
+                          {fmt(a.monto)}
+                        </td>
+
+                        <td>
+                          {a.notas || '—'}
+                        </td>
+
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <button
+                            className="btn-icon"
+                            title="Editar abono"
+                            onClick={() =>
+                              openEditAbono(a, v)
+                            }
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            className="btn-icon"
+                            title="Eliminar abono"
+                            onClick={() =>
+                              eliminar(
+                                'abonos',
+                                a.id
+                              )
+                            }
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
         </div>
       )}
 
       {/* MODALES */}
       {modal && (
-        <div className="modal-overlay" onClick={() => setModal(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+        <div
+          className="modal-overlay"
+          onClick={() => setModal(null)}
+        >
+          <div
+            className="modal"
+            onClick={e =>
+              e.stopPropagation()
+            }
+            style={{
+              maxWidth: modal === 'historial' ? 800 : 520,
+            }}
+          >
             <div className="modal-header">
               <span className="section-title">
-                {modal === 'perfume' && (editId ? 'Editar perfume' : 'Registrar perfume')}
-                {modal === 'venta' && (editId ? 'Editar venta' : 'Registrar venta')}
-                {modal === 'abono' && 'Registrar abono'}
+                {modal === 'perfume' &&
+                  (editId
+                    ? 'Editar perfume'
+                    : 'Registrar perfume')}
+
+                {modal === 'venta' &&
+                  (editId
+                    ? 'Editar venta'
+                    : 'Registrar venta')}
+
+                {modal === 'abono' &&
+                  (editAbonoId
+                    ? 'Editar abono'
+                    : 'Registrar abono')}
+
+                {modal === 'historial' && 'Historial de ventas liquidadas'}
               </span>
-              <button className="btn-icon" onClick={() => { setModal(null); setEditId(null) }}><X size={16} /></button>
+
+              <button
+                className="btn-icon"
+                onClick={() => {
+                  setModal(null)
+                  setEditId(null)
+                  setEditAbonoId(null)
+                }}
+              >
+                <X size={16} />
+              </button>
             </div>
+
             <div className="modal-body">
-              {error && <div style={{ color: '#c45c5c', fontSize: '0.8rem', marginBottom: 12 }}>{error}</div>}
+              {error && (
+                <div
+                  style={{
+                    color: '#c45c5c',
+                    fontSize: '0.8rem',
+                    marginBottom: 12,
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+
+              {modal === 'historial' && (
+                <>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 10,
+                      marginBottom: 16,
+                    }}
+                  >
+                    <input
+                      className="form-input"
+                      placeholder="Buscar cliente..."
+                      value={historialFiltro.cliente}
+                      onChange={e =>
+                        setHistorialFiltro(f => ({
+                          ...f,
+                          cliente: e.target.value,
+                        }))
+                      }
+                    />
+                    <input
+                      className="form-input"
+                      placeholder="Buscar perfume..."
+                      value={historialFiltro.perfume}
+                      onChange={e =>
+                        setHistorialFiltro(f => ({
+                          ...f,
+                          perfume: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div
+                    className="table-wrap"
+                    style={{ maxHeight: 400, overflowY: 'auto' }}
+                  >
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Cliente</th>
+                          <th>Perfume</th>
+                          <th>Total</th>
+                          <th>Abonado</th>
+                          <th>Resta</th>
+                          <th>Notas</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ventasFiltradas.length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={7}
+                              style={{
+                                textAlign: 'center',
+                                color: 'var(--cream-dim)',
+                              }}
+                            >
+                              No hay ventas liquidadas
+                            </td>
+                          </tr>
+                        ) : (
+                          ventasFiltradas.map(v => (
+                            <tr key={v.id}>
+                              <td>{fmtDate(v.fecha)}</td>
+                              <td
+                                style={{
+                                  color: 'var(--cream)',
+                                }}
+                              >
+                                {v.cliente || '—'}
+                              </td>
+                              <td>{v.perfume_nombre}</td>
+                              <td>{fmt(v.total_venta)}</td>
+                              <td className="td-green">
+                                {fmt(v.abonado)}
+                              </td>
+                              <td className="td-gold">
+                                {fmt(v.resto)}
+                              </td>
+                              <td>
+                                {v.notas || '—'}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 16,
+                      display: 'flex',
+                      gap: 20,
+                      justifyContent: 'flex-end',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '0.85rem',
+                        color: 'var(--cream-dim)',
+                      }}
+                    >
+                      Total ventas:{' '}
+                      <strong style={{ color: 'var(--cream)' }}>
+                        {fmt(
+                          ventasFiltradas.reduce(
+                            (s, v) => s + v.total_venta,
+                            0
+                          )
+                        )}
+                      </strong>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '0.85rem',
+                        color: 'var(--cream-dim)',
+                      }}
+                    >
+                      Total cobrado:{' '}
+                      <strong style={{ color: '#4a8c6a' }}>
+                        {fmt(
+                          ventasFiltradas.reduce(
+                            (s, v) => s + v.abonado,
+                            0
+                          )
+                        )}
+                      </strong>
+                    </div>
+                  </div>
+                </>
+              )}
 
               {modal === 'perfume' && (
                 <>
                   <div className="form-group">
-                    <label className="form-label">Nombre del perfume *</label>
-                    <input className="form-input" value={perfumeForm.nombre} onChange={e => sp('nombre', e.target.value)} placeholder="Ej: Dior Sauvage" />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Proveedor</label>
-                    <input className="form-input" value={perfumeForm.proveedor} onChange={e => sp('proveedor', e.target.value)} placeholder="Nombre del proveedor" />
-                  </div>
-                  <div className="form-grid-2">
-                    <div className="form-group">
-                      <label className="form-label">Costo de proveedor ($) *</label>
-                      <input type="number" className="form-input" value={perfumeForm.precio_proveedor} onChange={e => sp('precio_proveedor', e.target.value)} />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Precio venta al público ($)</label>
-                      <input type="number" className="form-input" value={perfumeForm.precio_publico} onChange={e => sp('precio_publico', e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Piezas compradas</label>
-                    <input type="number" min={1} className="form-input" value={perfumeForm.piezas_compradas} onChange={e => setPiezas(e.target.value)} />
+                    <label className="form-label">
+                      Nombre del perfume *
+                    </label>
+
+                    <input
+                      className="form-input"
+                      value={perfumeForm.nombre}
+                      onChange={e =>
+                        sp(
+                          'nombre',
+                          e.target.value
+                        )
+                      }
+                      placeholder="Ej: Dior Sauvage"
+                    />
                   </div>
 
-                  <div style={{ border: '1px solid var(--noir-border)', borderRadius: 6, padding: 14, marginBottom: 14 }}>
-                    <div className="label" style={{ marginBottom: 10 }}>ENVÍO DEL LOTE (opcional)</div>
+                  <div className="form-group">
+                    <label className="form-label">
+                      Proveedor
+                    </label>
+
+                    <input
+                      className="form-input"
+                      value={
+                        perfumeForm.proveedor
+                      }
+                      onChange={e =>
+                        sp(
+                          'proveedor',
+                          e.target.value
+                        )
+                      }
+                      placeholder="Nombre del proveedor"
+                    />
+                  </div>
+
+                  <div className="form-grid-2">
+                    <div className="form-group">
+                      <label className="form-label">
+                        Costo de proveedor ($) *
+                      </label>
+
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={
+                          perfumeForm.precio_proveedor
+                        }
+                        onChange={e =>
+                          sp(
+                            'precio_proveedor',
+                            e.target.value
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">
+                        Precio venta al público ($)
+                      </label>
+
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={
+                          perfumeForm.precio_publico
+                        }
+                        onChange={e =>
+                          sp(
+                            'precio_publico',
+                            e.target.value
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      Piezas compradas
+                    </label>
+
+                    <input
+                      type="number"
+                      min={1}
+                      className="form-input"
+                      value={
+                        perfumeForm.piezas_compradas
+                      }
+                      onChange={e =>
+                        setPiezas(
+                          e.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      border:
+                        '1px solid var(--noir-border)',
+                      borderRadius: 6,
+                      padding: 14,
+                      marginBottom: 14,
+                    }}
+                  >
+                    <div
+                      className="label"
+                      style={{
+                        marginBottom: 10,
+                      }}
+                    >
+                      ENVÍO DEL LOTE (opcional)
+                    </div>
+
                     <div className="form-grid-2">
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">¿Cuánto costó el envío? ($)</label>
+                      <div
+                        className="form-group"
+                        style={{
+                          marginBottom: 0,
+                        }}
+                      >
+                        <label className="form-label">
+                          ¿Cuánto costó el envío?
+                          ($)
+                        </label>
+
                         <input
                           type="number"
                           className="form-input"
-                          value={perfumeForm.costo_envio}
-                          onChange={e => sp('costo_envio', e.target.value)}
+                          value={
+                            perfumeForm.costo_envio
+                          }
+                          onChange={e =>
+                            sp(
+                              'costo_envio',
+                              e.target.value
+                            )
+                          }
                           placeholder="0 si no hubo envío"
                         />
                       </div>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">¿Entre cuántas piezas se reparte?</label>
+
+                      <div
+                        className="form-group"
+                        style={{
+                          marginBottom: 0,
+                        }}
+                      >
+                        <label className="form-label">
+                          ¿Entre cuántas piezas se
+                          reparte?
+                        </label>
+
                         <input
                           type="number"
                           min={1}
                           className="form-input"
-                          value={perfumeForm.piezas_envio}
-                          onChange={e => sp('piezas_envio', e.target.value)}
+                          value={
+                            perfumeForm.piezas_envio
+                          }
+                          onChange={e =>
+                            sp(
+                              'piezas_envio',
+                              e.target.value
+                            )
+                          }
                         />
                       </div>
                     </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--cream-dim)', marginTop: 10 }}>
-                      Ej: compraste 4 perfumes y el envío fue $240 → pon envío 240 y reparte en 4 → {fmt(240 / 4)}/pieza.
-                      Si no cobraron envío, deja en 0.
+
+                    <div
+                      style={{
+                        fontSize: '0.75rem',
+                        color:
+                          'var(--cream-dim)',
+                        marginTop: 10,
+                      }}
+                    >
+                      Ej: compraste 4 perfumes y
+                      el envío fue $240 → pon
+                      envío 240 y reparte en 4 →{' '}
+                      {fmt(240 / 4)}/pieza. Si no
+                      cobraron envío, deja en 0.
                     </div>
                   </div>
 
-                  <div style={{ fontSize: '0.82rem', color: 'var(--cream-dim)', marginBottom: 12, lineHeight: 1.7 }}>
-                    Envío por pieza: <strong style={{ color: 'var(--cream)' }}>{fmt(envioU())}</strong><br />
-                    Costo unitario real: <strong style={{ color: 'var(--cream)' }}>{fmt(costoU())}</strong><br />
-                    Ganancia unitaria: <strong style={{ color: gananciaU() >= 0 ? '#4a8c6a' : '#c45c5c' }}>{fmt(gananciaU())}</strong>
+                  <div
+                    style={{
+                      fontSize: '0.82rem',
+                      color:
+                        'var(--cream-dim)',
+                      marginBottom: 12,
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    Envío por pieza:{' '}
+                    <strong
+                      style={{
+                        color:
+                          'var(--cream)',
+                      }}
+                    >
+                      {fmt(envioU())}
+                    </strong>
+                    <br />
+
+                    Costo unitario real:{' '}
+                    <strong
+                      style={{
+                        color:
+                          'var(--cream)',
+                      }}
+                    >
+                      {fmt(costoU())}
+                    </strong>
+                    <br />
+
+                    Ganancia unitaria:{' '}
+                    <strong
+                      style={{
+                        color:
+                          gananciaU() >= 0
+                            ? '#4a8c6a'
+                            : '#c45c5c',
+                      }}
+                    >
+                      {fmt(gananciaU())}
+                    </strong>
+
                     {' · '}Si vendes todo:{' '}
-                    <strong style={{ color: 'var(--gold)' }}>
-                      {fmt(gananciaU() * (parseInt(perfumeForm.piezas_compradas, 10) || 0))}
+
+                    <strong
+                      style={{
+                        color:
+                          'var(--gold)',
+                      }}
+                    >
+                      {fmt(
+                        gananciaU() *
+                        (parseInt(
+                          perfumeForm.piezas_compradas,
+                          10
+                        ) || 0)
+                      )}
                     </strong>
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Notas</label>
-                    <textarea className="form-input" value={perfumeForm.notas} onChange={e => sp('notas', e.target.value)} />
+                    <label className="form-label">
+                      Notas
+                    </label>
+
+                    <textarea
+                      className="form-input"
+                      value={
+                        perfumeForm.notas
+                      }
+                      onChange={e =>
+                        sp(
+                          'notas',
+                          e.target.value
+                        )
+                      }
+                    />
                   </div>
                 </>
               )}
@@ -464,101 +1402,430 @@ export default function Perfumes() {
               {modal === 'venta' && (
                 <>
                   <div className="form-group">
-                    <label className="form-label">Perfume *</label>
-                    <select className="form-input" value={ventaForm.perfume_id} onChange={e => {
-                      const id = e.target.value
-                      sv('perfume_id', id)
-                      const p = perfumes.find(x => x.id === parseInt(id, 10))
-                      if (p) sv('precio_unitario', p.precio_publico)
-                    }}>
-                      <option value="">Seleccionar...</option>
-                      {perfumes.filter(p => p.stock > 0).map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.nombre} · stock {p.stock} · público {fmt(p.precio_publico)}
-                        </option>
-                      ))}
+                    <label className="form-label">
+                      Perfume *
+                    </label>
+
+                    <select
+                      className="form-input"
+                      value={
+                        ventaForm.perfume_id
+                      }
+                      onChange={e => {
+                        const id =
+                          e.target.value
+
+                        sv(
+                          'perfume_id',
+                          id
+                        )
+
+                        const p =
+                          perfumes.find(
+                            x =>
+                              x.id ===
+                              parseInt(
+                                id,
+                                10
+                              )
+                          )
+
+                        if (p) {
+                          sv(
+                            'precio_unitario',
+                            p.precio_publico
+                          )
+                        }
+                      }}
+                    >
+                      <option value="">
+                        Seleccionar...
+                      </option>
+
+                      {perfumes
+                        .filter(
+                          p =>
+                            p.stock > 0
+                        )
+                        .map(p => (
+                          <option
+                            key={p.id}
+                            value={p.id}
+                          >
+                            {p.nombre} · stock{' '}
+                            {p.stock} · público{' '}
+                            {fmt(
+                              p.precio_publico
+                            )}
+                          </option>
+                        ))}
                     </select>
                   </div>
-                  <div className="form-group">
-                    <label className="form-label">Cliente</label>
-                    <input className="form-input" value={ventaForm.cliente} onChange={e => sv('cliente', e.target.value)} placeholder="¿A quién se lo vendimos?" />
-                  </div>
-                  <div className="form-grid-2">
-                    <div className="form-group">
-                      <label className="form-label">Cantidad</label>
-                      <input type="number" min={1} className="form-input" value={ventaForm.cantidad} onChange={e => sv('cantidad', e.target.value)} />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Precio unitario venta ($)</label>
-                      <input type="number" className="form-input" value={ventaForm.precio_unitario} onChange={e => sv('precio_unitario', e.target.value)} />
-                    </div>
-                  </div>
-                  <div style={{ color: 'var(--gold)', marginBottom: 12 }}>Total: <strong>{fmt(totalVenta())}</strong></div>
 
                   <div className="form-group">
-                    <label className="form-label">Forma de pago</label>
-                    <div style={{ display: 'flex', gap: 16 }}>
-                      <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
-                        <input type="radio" checked={ventaForm.tipo_pago === 'contado'} onChange={() => sv('tipo_pago', 'contado')} />
+                    <label className="form-label">
+                      Cliente
+                    </label>
+
+                    <input
+                      className="form-input"
+                      value={
+                        ventaForm.cliente
+                      }
+                      onChange={e =>
+                        sv(
+                          'cliente',
+                          e.target.value
+                        )
+                      }
+                      placeholder="¿A quién se lo vendimos?"
+                    />
+                  </div>
+
+                  <div className="form-grid-2">
+                    <div className="form-group">
+                      <label className="form-label">
+                        Cantidad
+                      </label>
+
+                      <input
+                        type="number"
+                        min={1}
+                        className="form-input"
+                        value={
+                          ventaForm.cantidad
+                        }
+                        onChange={e =>
+                          sv(
+                            'cantidad',
+                            e.target.value
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">
+                        Precio unitario venta ($)
+                      </label>
+
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={
+                          ventaForm.precio_unitario
+                        }
+                        onChange={e =>
+                          sv(
+                            'precio_unitario',
+                            e.target.value
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      color:
+                        'var(--gold)',
+                      marginBottom: 12,
+                    }}
+                  >
+                    Total:{' '}
+                    <strong>
+                      {fmt(
+                        totalVenta()
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      Forma de pago
+                    </label>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 16,
+                      }}
+                    >
+                      <label
+                        style={{
+                          display: 'flex',
+                          gap: 6,
+                          alignItems:
+                            'center',
+                          cursor:
+                            'pointer',
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          checked={
+                            ventaForm.tipo_pago ===
+                            'contado'
+                          }
+                          onChange={() =>
+                            sv(
+                              'tipo_pago',
+                              'contado'
+                            )
+                          }
+                        />
+
                         Un solo pago
                       </label>
-                      <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
-                        <input type="radio" checked={ventaForm.tipo_pago === 'abonos'} onChange={() => sv('tipo_pago', 'abonos')} />
+
+                      <label
+                        style={{
+                          display: 'flex',
+                          gap: 6,
+                          alignItems:
+                            'center',
+                          cursor:
+                            'pointer',
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          checked={
+                            ventaForm.tipo_pago ===
+                            'abonos'
+                          }
+                          onChange={() =>
+                            sv(
+                              'tipo_pago',
+                              'abonos'
+                            )
+                          }
+                        />
+
                         Varios pagos / abonos
                       </label>
                     </div>
                   </div>
 
-                  {ventaForm.tipo_pago === 'abonos' && (
-                    <div className="form-group">
-                      <label className="form-label">Abono inicial ($)</label>
-                      <input type="number" className="form-input" value={ventaForm.abonado} onChange={e => sv('abonado', e.target.value)} placeholder="0 si no deja nada hoy" />
-                      <div style={{ fontSize: '0.72rem', color: 'var(--cream-dim)', marginTop: 4 }}>
-                        Resta: {fmt(Math.max(0, totalVenta() - (Number(ventaForm.abonado) || 0)))}
+                  {ventaForm.tipo_pago ===
+                    'abonos' && (
+                      <div className="form-group">
+                        <label className="form-label">
+                          Abono inicial ($)
+                        </label>
+
+                        <input
+                          type="number"
+                          className="form-input"
+                          value={
+                            ventaForm.abonado
+                          }
+                          onChange={e =>
+                            sv(
+                              'abonado',
+                              e.target.value
+                            )
+                          }
+                          placeholder="0 si no deja nada hoy"
+                        />
+
+                        <div
+                          style={{
+                            fontSize:
+                              '0.72rem',
+                            color:
+                              'var(--cream-dim)',
+                            marginTop: 4,
+                          }}
+                        >
+                          Resta:{' '}
+                          {fmt(
+                            Math.max(
+                              0,
+                              totalVenta() -
+                              (Number(
+                                ventaForm.abonado
+                              ) || 0)
+                            )
+                          )}
+                        </div>
                       </div>
+                    )}
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      Fecha
+                    </label>
+
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={
+                        ventaForm.fecha
+                      }
+                      onChange={e =>
+                        sv(
+                          'fecha',
+                          e.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      Notas
+                    </label>
+
+                    <textarea
+                      className="form-input"
+                      value={
+                        ventaForm.notas
+                      }
+                      onChange={e =>
+                        sv(
+                          'notas',
+                          e.target.value
+                        )
+                      }
+                    />
+                  </div>
+                </>
+              )}
+
+              {modal === 'abono' &&
+                ventaAbono && (
+                  <>
+                    <div
+                      style={{
+                        fontSize:
+                          '0.85rem',
+                        color:
+                          'var(--cream-dim)',
+                        marginBottom: 14,
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      Cliente:{' '}
+                      <strong
+                        style={{
+                          color:
+                            'var(--cream)',
+                        }}
+                      >
+                        {ventaAbono.cliente ||
+                          '—'}
+                      </strong>
+                      <br />
+
+                      Total{' '}
+                      {fmt(
+                        ventaAbono.total_venta
+                      )}{' '}
+                      · Abonado{' '}
+                      {fmt(
+                        ventaAbono.abonado
+                      )}{' '}
+                      ·{' '}
+
+                      <span
+                        style={{
+                          color:
+                            'var(--gold)',
+                        }}
+                      >
+                        Resta{' '}
+                        {fmt(
+                          ventaAbono.resto
+                        )}
+                      </span>
                     </div>
-                  )}
 
-                  <div className="form-group">
-                    <label className="form-label">Fecha</label>
-                    <input type="date" className="form-input" value={ventaForm.fecha} onChange={e => sv('fecha', e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Notas</label>
-                    <textarea className="form-input" value={ventaForm.notas} onChange={e => sv('notas', e.target.value)} />
-                  </div>
-                </>
-              )}
+                    <div className="form-group">
+                      <label className="form-label">
+                        Monto del abono ($)
+                      </label>
 
-              {modal === 'abono' && ventaAbono && (
-                <>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--cream-dim)', marginBottom: 14, lineHeight: 1.6 }}>
-                    Cliente: <strong style={{ color: 'var(--cream)' }}>{ventaAbono.cliente || '—'}</strong><br />
-                    Total {fmt(ventaAbono.total_venta)} · Abonado {fmt(ventaAbono.abonado)} ·{' '}
-                    <span style={{ color: 'var(--gold)' }}>Resta {fmt(ventaAbono.resto)}</span>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Monto del abono ($)</label>
-                    <input type="number" className="form-input" value={abonoForm.monto} onChange={e => setAbonoForm(f => ({ ...f, monto: e.target.value }))} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Fecha</label>
-                    <input type="date" className="form-input" value={abonoForm.fecha} onChange={e => setAbonoForm(f => ({ ...f, fecha: e.target.value }))} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Notas</label>
-                    <input className="form-input" value={abonoForm.notas} onChange={e => setAbonoForm(f => ({ ...f, notas: e.target.value }))} />
-                  </div>
-                </>
-              )}
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={
+                          abonoForm.monto
+                        }
+                        onChange={e =>
+                          setAbonoForm(
+                            f => ({
+                              ...f,
+                              monto:
+                                e.target
+                                  .value,
+                            })
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">
+                        Fecha
+                      </label>
+
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={
+                          abonoForm.fecha
+                        }
+                        onChange={e =>
+                          setAbonoForm(
+                            f => ({
+                              ...f,
+                              fecha:
+                                e.target
+                                  .value,
+                            })
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">
+                        Notas
+                      </label>
+
+                      <input
+                        className="form-input"
+                        value={
+                          abonoForm.notas
+                        }
+                        onChange={e =>
+                          setAbonoForm(
+                            f => ({
+                              ...f,
+                              notas:
+                                e.target
+                                  .value,
+                            })
+                          )
+                        }
+                      />
+                    </div>
+                  </>
+                )}
             </div>
+
             <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => { setModal(null); setEditId(null) }}>Cancelar</button>
-              <button className="btn btn-gold" onClick={() => {
-                if (modal === 'perfume') submitPerfume()
-                if (modal === 'venta') submitVenta()
-                if (modal === 'abono') submitAbono()
-              }}>{editId ? 'Guardar cambios' : 'Guardar'}</button>
+              <button
+                className="btn btn-outline"
+                onClick={() => {
+                  setModal(null)
+                  setEditId(null)
+                  setEditAbonoId(null)
+                }}
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>
@@ -570,8 +1837,1877 @@ export default function Perfumes() {
 function Kpi({ label, value, color }) {
   return (
     <div className="stat-card">
-      <div className="label">{label}</div>
-      <div className="stat-value" style={{ color: color || 'var(--cream)', fontSize: '1.15rem' }}>{value}</div>
+      <div className="label">
+        {label}
+      </div>
+
+      <div
+        className="stat-value"
+        style={{
+          color:
+            color ||
+            'var(--cream)',
+          fontSize: '1.15rem',
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  )
+} import { useState, useEffect } from 'react'
+import { Plus, X, Trash2, ShoppingCart, Package, CreditCard, Pencil, Clock } from 'lucide-react'
+import { api, fmt, fmtDate } from '../api'
+
+const hoy = new Date().toISOString().split('T')[0]
+
+const emptyPerfume = {
+  nombre: '',
+  proveedor: '',
+  precio_proveedor: '',
+  precio_publico: '',
+  piezas_compradas: 1,
+  costo_envio: 0,
+  piezas_envio: 1,
+  notas: '',
+}
+
+const emptyVenta = {
+  perfume_id: '',
+  cliente: '',
+  cantidad: 1,
+  precio_unitario: '',
+  tipo_pago: 'contado',
+  abonado: '',
+  fecha: hoy,
+  notas: '',
+}
+
+export default function Perfumes() {
+  const [resumen, setResumen] = useState(null)
+  const [perfumes, setPerfumes] = useState([])
+  const [ventas, setVentas] = useState([])
+  const [modal, setModal] = useState(null)
+  const [editId, setEditId] = useState(null)
+  const [ventaAbono, setVentaAbono] = useState(null)
+  const [error, setError] = useState('')
+  const [perfumeForm, setPerfumeForm] = useState(emptyPerfume)
+  const [ventaForm, setVentaForm] = useState(emptyVenta)
+  const [abonoForm, setAbonoForm] = useState({
+    monto: '',
+    fecha: hoy,
+    notas: '',
+  })
+  const [editAbonoId, setEditAbonoId] = useState(null)
+
+  // Estados para paginación
+  const [paginaActual, setPaginaActual] = useState(1)
+  const [perfumesPorPagina] = useState(10)
+
+  // Filtros para el historial - SIN estado
+  const [historialFiltro, setHistorialFiltro] = useState({
+    cliente: '',
+    perfume: '',
+    fechaInicio: '',
+    fechaFin: ''
+  })
+
+  const load = async () => {
+    const [r, p, v] = await Promise.all([
+      api.get('/resumen'),
+      api.get('/perfumes'),
+      api.get('/ventas'),
+    ])
+
+    setResumen(r)
+    setPerfumes(p)
+    setVentas(v)
+    setPaginaActual(1)
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  const sp = (k, v) =>
+    setPerfumeForm(f => ({
+      ...f,
+      [k]: v,
+    }))
+
+  const sv = (k, v) =>
+    setVentaForm(f => ({
+      ...f,
+      [k]: v,
+    }))
+
+  const setPiezas = (val) => {
+    const n = parseInt(val, 10) || 1
+
+    setPerfumeForm(f => ({
+      ...f,
+      piezas_compradas: n,
+      piezas_envio:
+        f.piezas_envio === f.piezas_compradas || !f.piezas_envio
+          ? n
+          : f.piezas_envio,
+    }))
+  }
+
+  const envioU = () => {
+    const env = parseFloat(perfumeForm.costo_envio) || 0
+    const n = Math.max(
+      parseInt(perfumeForm.piezas_envio, 10) || 1,
+      1
+    )
+
+    return env / n
+  }
+
+  const costoU = () =>
+    (parseFloat(perfumeForm.precio_proveedor) || 0) + envioU()
+
+  const gananciaU = () =>
+    (parseFloat(perfumeForm.precio_publico) || 0) - costoU()
+
+  const totalVenta = () =>
+    (parseFloat(ventaForm.precio_unitario) || 0) *
+    (parseInt(ventaForm.cantidad, 10) || 1)
+
+  // Calcular paginación
+  const indexUltimoPerfume = paginaActual * perfumesPorPagina
+  const indexPrimerPerfume = indexUltimoPerfume - perfumesPorPagina
+  const perfumesPaginados = perfumes.slice(indexPrimerPerfume, indexUltimoPerfume)
+  const totalPaginas = Math.ceil(perfumes.length / perfumesPorPagina)
+
+  const cambiarPagina = (numero) => {
+    if (numero >= 1 && numero <= totalPaginas) {
+      setPaginaActual(numero)
+    }
+  }
+
+  const openEditPerfume = (p) => {
+    setError('')
+    setEditId(p.id)
+
+    setPerfumeForm({
+      nombre: p.nombre || '',
+      proveedor: p.proveedor || '',
+      precio_proveedor: p.precio_proveedor ?? '',
+      precio_publico: p.precio_publico ?? '',
+      piezas_compradas: p.piezas_compradas ?? 1,
+      costo_envio: p.costo_envio ?? 0,
+      piezas_envio:
+        p.piezas_envio ??
+        p.piezas_compradas ??
+        1,
+      notas: p.notas || '',
+    })
+
+    setModal('perfume')
+  }
+
+  const submitPerfume = async () => {
+    setError('')
+
+    if (!perfumeForm.nombre) {
+      setError('Nombre obligatorio')
+      return
+    }
+
+    if (perfumeForm.precio_proveedor === '') {
+      setError('Costo de proveedor obligatorio')
+      return
+    }
+
+    const res = editId
+      ? await api.put(`/perfumes/${editId}`, perfumeForm)
+      : await api.post('/perfumes', perfumeForm)
+
+    if (res.error) {
+      setError(res.error)
+      return
+    }
+
+    await load()
+    setModal(null)
+    setEditId(null)
+    setPerfumeForm(emptyPerfume)
+  }
+
+  const openEditVenta = (v) => {
+    setError('')
+    setEditId(v.id)
+
+    setVentaForm({
+      perfume_id: String(v.perfume_id),
+      cliente: v.cliente || '',
+      cantidad: v.cantidad || 1,
+      precio_unitario: v.precio_unitario ?? '',
+      tipo_pago: v.tipo_pago || 'contado',
+      abonado: v.abonado ?? '',
+      fecha: v.fecha || hoy,
+      notas: v.notas || '',
+    })
+
+    setModal('venta')
+  }
+
+  const submitVenta = async () => {
+    setError('')
+
+    if (!ventaForm.perfume_id || !ventaForm.precio_unitario) {
+      setError('Selecciona perfume y precio de venta')
+      return
+    }
+
+    const total = totalVenta()
+    const abonadoInicial = ventaForm.tipo_pago === 'contado' ? total : (Number(ventaForm.abonado) || 0)
+
+    const res = await api.post('/ventas', {
+      ...ventaForm,
+      total_venta: total,
+      abonado: 0,
+    })
+
+    if (res.error) {
+      setError(res.error)
+      return
+    }
+
+    if (abonadoInicial > 0) {
+      const abonoRes = await api.post(`/ventas/${res.id}/abonos`, {
+        monto: abonadoInicial,
+        fecha: ventaForm.fecha || hoy,
+        notas: ventaForm.tipo_pago === 'contado' ? 'Pago completo' : 'Abono inicial'
+      })
+
+      if (abonoRes.error) {
+        setError(abonoRes.error)
+        return
+      }
+    }
+
+    await load()
+    setModal(null)
+    setEditId(null)
+    setVentaForm({
+      ...emptyVenta,
+      fecha: hoy,
+    })
+  }
+
+  const openAbono = (v) => {
+    setVentaAbono(v)
+    setEditAbonoId(null)
+    setAbonoForm({
+      monto: '',
+      fecha: hoy,
+      notas: '',
+    })
+
+    setError('')
+    setModal('abono')
+  }
+
+  const openEditAbono = (abono, venta) => {
+    setVentaAbono(venta)
+    setEditAbonoId(abono.id)
+    setAbonoForm({
+      monto: abono.monto,
+      fecha: abono.fecha || hoy,
+      notas: abono.notas || '',
+    })
+
+    setError('')
+    setModal('abono')
+  }
+
+  const submitAbono = async () => {
+    setError('')
+
+    if (!abonoForm.monto || Number(abonoForm.monto) <= 0) {
+      setError('Monto inválido')
+      return
+    }
+
+    let res
+    if (editAbonoId) {
+      res = await api.put(`/abonos/${editAbonoId}`, abonoForm)
+    } else {
+      res = await api.post(`/ventas/${ventaAbono.id}/abonos`, abonoForm)
+    }
+
+    if (res.error) {
+      setError(res.error)
+      return
+    }
+
+    await load()
+    setModal(null)
+    setVentaAbono(null)
+    setEditAbonoId(null)
+  }
+
+  const eliminar = async (tipo, id) => {
+    if (!confirm('¿Eliminar? Esta acción no se puede deshacer.')) {
+      return
+    }
+
+    const res = await api.delete(`/${tipo}/${id}`)
+
+    if (res.error) {
+      alert(res.error)
+    }
+
+    load()
+  }
+
+  // Ventas NO liquidadas (para la tabla principal)
+  const ventasPendientes = ventas.filter(v => !v.liquidado)
+
+  // Ventas liquidadas (para el historial)
+  const ventasLiquidadas = ventas.filter(v => v.liquidado)
+
+  // Filtrar ventas para el historial - SIN filtro de estado
+  const ventasFiltradas = ventasLiquidadas.filter(v => {
+    if (historialFiltro.cliente && !v.cliente?.toLowerCase().includes(historialFiltro.cliente.toLowerCase())) {
+      return false
+    }
+    if (historialFiltro.perfume && !v.perfume_nombre?.toLowerCase().includes(historialFiltro.perfume.toLowerCase())) {
+      return false
+    }
+    if (historialFiltro.fechaInicio && v.fecha < historialFiltro.fechaInicio) return false
+    if (historialFiltro.fechaFin && v.fecha > historialFiltro.fechaFin) return false
+    return true
+  })
+
+  if (!resumen) {
+    return (
+      <div
+        className="flex-center"
+        style={{
+          height: 280,
+          color: 'var(--cream-dim)',
+        }}
+      >
+        Cargando...
+      </div>
+    )
+  }
+
+  const totalPorCobrarGlobal = ventasPendientes.reduce(
+    (acc, venta) => acc + (venta.resto || 0),
+    0
+  )
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <div className="ornament">✦ ✦ ✦</div>
+
+          <h1
+            className="page-title"
+            style={{ marginTop: 8 }}
+          >
+            Mis <span>Perfumes</span>
+          </h1>
+
+          <div
+            className="label"
+            style={{ marginTop: 6 }}
+          >
+            Control estricto de costos, ventas y dinero
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: 10,
+          }}
+        >
+          <button
+            className="btn btn-outline"
+            disabled={!perfumes.some(p => p.stock > 0)}
+            onClick={() => {
+              setError('')
+              setEditId(null)
+
+              setVentaForm({
+                ...emptyVenta,
+                fecha: hoy,
+              })
+
+              setModal('venta')
+            }}
+          >
+            <ShoppingCart size={14} />
+            Vender
+          </button>
+
+          <button
+            className="btn btn-outline"
+            onClick={() => {
+              setError('')
+              setHistorialFiltro({ cliente: '', perfume: '', fechaInicio: '', fechaFin: '' })
+              setModal('historial')
+            }}
+            style={{ borderColor: 'var(--gold)' }}
+          >
+            <Clock size={14} />
+            Historial de ventas
+          </button>
+
+          <button
+            className="btn btn-gold"
+            onClick={() => {
+              setError('')
+              setEditId(null)
+              setPerfumeForm(emptyPerfume)
+              setModal('perfume')
+            }}
+          >
+            <Plus size={14} />
+            Registrar perfume
+          </button>
+        </div>
+      </div>
+
+      {/* DASHBOARD MEJORADO */}
+      <div className="stats-grid">
+        {/* CAPITAL INVERTIDO */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #3b82f6' }}>
+          <div className="label" style={{ color: '#3b82f6' }}>
+            💰 Capital invertido
+          </div>
+          <div className="stat-value" style={{ color: '#3b82f6', fontSize: '1.3rem' }}>
+            {fmt(resumen.capital_invertido)}
+          </div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            Todo lo que has gastado
+          </div>
+        </div>
+
+        {/* VALOR PÚBLICO TOTAL */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #eab308' }}>
+          <div className="label" style={{ color: '#eab308' }}>
+            🏷️ Valor público total
+          </div>
+          <div className="stat-value" style={{ color: '#eab308', fontSize: '1.3rem' }}>
+            {fmt(resumen.valor_publico_total)}
+          </div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            Precio de venta de TODO
+          </div>
+        </div>
+
+        {/* GANANCIA TOTAL */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #22c55e' }}>
+          <div className="label" style={{ color: '#22c55e' }}>
+            📈 Ganancia total
+          </div>
+          <div className="stat-value" style={{ color: '#22c55e', fontSize: '1.3rem' }}>
+            {fmt(resumen.ganancia_total)}
+          </div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            {resumen.ganancia_total > 0 ? '✅ Ganancia positiva' : '❌ Pérdida'}
+          </div>
+        </div>
+
+        {/* RENTABILIDAD */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #8b5cf6' }}>
+          <div className="label" style={{ color: '#8b5cf6' }}>
+            📊 Rentabilidad
+          </div>
+          <div className="stat-value" style={{ color: '#8b5cf6', fontSize: '1.3rem' }}>
+            {resumen.capital_invertido > 0
+              ? `${((resumen.ganancia_total / resumen.capital_invertido) * 100).toFixed(1)}%`
+              : '0%'}
+          </div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            Ganancia / Inversión × 100
+          </div>
+        </div>
+
+        {/* STOCK */}
+        <div className="stat-card" style={{ borderLeft: '3px solid #f59e0b' }}>
+          <div className="label" style={{ color: '#f59e0b' }}>
+            📦 Stock (piezas)
+          </div>
+          <div className="stat-value" style={{ color: '#f59e0b', fontSize: '1.3rem' }}>
+            {resumen.stock}
+          </div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--cream-dim)', marginTop: 2 }}>
+            Piezas en inventario
+          </div>
+        </div>
+
+        {/* DINERO EN CAJA */}
+        <Kpi
+          label="💰 Dinero en caja"
+          value={fmt(resumen.dinero_en_caja)}
+          color="#4a8c6a"
+        />
+
+        {/* POR COBRAR */}
+        <Kpi
+          label="📋 Por cobrar"
+          value={fmt(resumen.por_cobrar)}
+          color="#c9a84c"
+        />
+      </div>
+
+      <div
+        className="card"
+        style={{
+          marginBottom: 16,
+          padding: '14px 18px',
+          fontSize: '0.8rem',
+          color: 'var(--cream-dim)',
+          lineHeight: 1.6,
+        }}
+      >
+        <strong style={{ color: 'var(--gold)' }}>
+          Resumen:
+        </strong>{' '}
+        Has invertido <strong style={{ color: '#3b82f6' }}>${fmt(resumen.capital_invertido)}</strong> y has generado una ganancia de <strong style={{ color: '#22c55e' }}>${fmt(resumen.ganancia_total)}</strong>, lo que representa una rentabilidad del <strong style={{ color: '#8b5cf6' }}>
+          {resumen.capital_invertido > 0
+            ? `${((resumen.ganancia_total / resumen.capital_invertido) * 100).toFixed(1)}%`
+            : '0%'}
+        </strong>.
+        <br />
+        El valor total de tu negocio a precio público es de <strong style={{ color: '#eab308' }}>${fmt(resumen.valor_publico_total)}</strong>.
+        <br />
+        Tienes <strong style={{ color: '#f59e0b' }}>{resumen.stock} piezas</strong> en inventario.
+      </div>
+
+      {error && !modal && (
+        <div
+          className="card"
+          style={{
+            borderColor: '#c45c5c',
+            color: '#c45c5c',
+            marginBottom: 16,
+            padding: '12px 16px',
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {/* INVENTARIO CON PAGINACIÓN */}
+      <div className="card">
+        <div className="section-title mb-4">
+          Inventario ({perfumes.length} perfumes)
+        </div>
+
+        {perfumes.length === 0 ? (
+          <div className="empty-state">
+            <Package
+              size={28}
+              style={{
+                opacity: 0.4,
+                marginBottom: 8,
+              }}
+            />
+
+            <p>Sin perfumes. Registra el primero.</p>
+          </div>
+        ) : (
+          <>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Perfume</th>
+                    <th>Proveedor</th>
+                    <th>Costo prov.</th>
+                    <th>Envío/u</th>
+                    <th>Costo/u</th>
+                    <th>P. público</th>
+                    <th>Ganancia/u</th>
+                    <th>Cant.</th>
+                    <th>Vend.</th>
+                    <th>Stock</th>
+                    <th></th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {perfumesPaginados.map(p => (
+                    <tr key={p.id}>
+                      <td
+                        style={{
+                          color: 'var(--cream)',
+                          fontWeight: 500,
+                        }}
+                      >
+                        {p.nombre}
+                      </td>
+
+                      <td>
+                        {p.proveedor || '—'}
+                      </td>
+
+                      <td>
+                        {fmt(p.precio_proveedor)}
+                      </td>
+
+                      <td>
+                        {fmt(p.envio_unitario)}
+
+                        <span
+                          style={{
+                            display: 'block',
+                            fontSize: '0.65rem',
+                            color: 'var(--cream-dim)',
+                          }}
+                        >
+                          (lote {fmt(p.costo_envio)} / {p.piezas_envio})
+                        </span>
+                      </td>
+
+                      <td>
+                        {fmt(p.costo_unitario)}
+                      </td>
+
+                      <td className="td-gold">
+                        {fmt(p.precio_publico)}
+                      </td>
+
+                      <td
+                        className={
+                          p.ganancia_unitaria >= 0
+                            ? 'td-green'
+                            : 'td-red'
+                        }
+                      >
+                        {fmt(p.ganancia_unitaria)}
+                      </td>
+
+                      <td>
+                        {p.piezas_compradas}
+                      </td>
+
+                      <td>
+                        {p.vendidos}
+                      </td>
+
+                      <td>
+                        {p.stock}
+                      </td>
+
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <button
+                          className="btn-icon"
+                          title="Editar"
+                          onClick={() => openEditPerfume(p)}
+                        >
+                          <Pencil size={14} />
+                        </button>
+
+                        <button
+                          className="btn-icon"
+                          title="Eliminar"
+                          onClick={() =>
+                            eliminar('perfumes', p.id)
+                          }
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Paginación */}
+            {totalPaginas > 1 && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: 6,
+                marginTop: 16,
+                flexWrap: 'wrap'
+              }}>
+                <button
+                  className="btn btn-outline"
+                  onClick={() => cambiarPagina(paginaActual - 1)}
+                  disabled={paginaActual === 1}
+                  style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                >
+                  Anterior
+                </button>
+
+                {[...Array(totalPaginas)].map((_, i) => (
+                  <button
+                    key={i}
+                    className={paginaActual === i + 1 ? 'btn btn-gold' : 'btn btn-outline'}
+                    onClick={() => cambiarPagina(i + 1)}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.8rem',
+                      minWidth: '32px',
+                      ...(paginaActual === i + 1 ? { backgroundColor: 'var(--gold)', color: '#1a1a1a' } : {})
+                    }}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+
+                <button
+                  className="btn btn-outline"
+                  onClick={() => cambiarPagina(paginaActual + 1)}
+                  disabled={paginaActual === totalPaginas}
+                  style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                >
+                  Siguiente
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* VENTAS - SOLO PENDIENTES (NO LIQUIDADAS) */}
+      <div
+        className="card"
+        style={{ marginTop: 20 }}
+      >
+        <div className="section-title mb-4">
+          Ventas pendientes ({ventasPendientes.length})
+        </div>
+
+        {ventasPendientes.length === 0 ? (
+          <div className="empty-state">
+            <p>No hay ventas pendientes. Todas están liquidadas.</p>
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Cliente</th>
+                  <th>Perfume</th>
+                  <th>Cant.</th>
+                  <th>Total</th>
+                  <th>Pago</th>
+                  <th>Abonado</th>
+                  <th>Resta</th>
+                  <th>Notas</th>
+                  <th>Estado</th>
+                  <th></th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {ventasPendientes.map(v => (
+                  <tr key={v.id}>
+                    <td>
+                      {fmtDate(v.fecha)}
+                    </td>
+
+                    <td
+                      style={{
+                        color: 'var(--cream)',
+                      }}
+                    >
+                      {v.cliente || '—'}
+                    </td>
+
+                    <td>
+                      {v.perfume_nombre}
+                    </td>
+
+                    <td>
+                      {v.cantidad}
+                    </td>
+
+                    <td>
+                      {fmt(v.total_venta)}
+                    </td>
+
+                    <td>
+                      {v.tipo_pago === 'abonos'
+                        ? 'A plazos'
+                        : '1 pago'}
+                    </td>
+
+                    <td className="td-green">
+                      {fmt(v.abonado)}
+                    </td>
+
+                    <td className="td-gold">
+                      {fmt(v.resto)}
+                    </td>
+
+                    <td>
+                      {v.notas || '—'}
+                    </td>
+
+                    <td>
+                      <span className="badge badge-gold">
+                        {v.pct_pagado}%
+                      </span>
+                    </td>
+
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <button
+                        className="btn-icon"
+                        title="Editar venta"
+                        onClick={() =>
+                          openEditVenta(v)
+                        }
+                      >
+                        <Pencil size={14} />
+                      </button>
+
+                      <button
+                        className="btn-icon"
+                        title="Agregar abono"
+                        onClick={() =>
+                          openAbono(v)
+                        }
+                      >
+                        <CreditCard size={14} />
+                      </button>
+
+                      <button
+                        className="btn-icon"
+                        title="Eliminar venta"
+                        onClick={() =>
+                          eliminar('ventas', v.id)
+                        }
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* HISTORIAL ABONOS */}
+      {ventas.some(v => v.abonos?.length > 0) && (
+        <div
+          className="card"
+          style={{ marginTop: 20 }}
+        >
+          <div className="section-title mb-4">
+            Historial de abonos
+          </div>
+
+          {ventas
+            .filter(v => v.abonos?.length)
+            .map(v => (
+              <div
+                key={v.id}
+                style={{
+                  marginBottom: 14,
+                  paddingBottom: 10,
+                  borderBottom:
+                    '1px solid var(--noir-border)',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '0.85rem',
+                    color: 'var(--cream)',
+                    marginBottom: 6,
+                  }}
+                >
+                  {v.cliente || 'Cliente'} —{' '}
+                  {v.perfume_nombre} (
+                  {fmt(v.total_venta)})
+                </div>
+
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Monto</th>
+                      <th>Notas</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {v.abonos.map(a => (
+                      <tr key={a.id}>
+                        <td>
+                          {fmtDate(a.fecha)}
+                        </td>
+
+                        <td className="td-green">
+                          {fmt(a.monto)}
+                        </td>
+
+                        <td>
+                          {a.notas || '—'}
+                        </td>
+
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <button
+                            className="btn-icon"
+                            title="Editar abono"
+                            onClick={() =>
+                              openEditAbono(a, v)
+                            }
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            className="btn-icon"
+                            title="Eliminar abono"
+                            onClick={() =>
+                              eliminar(
+                                'abonos',
+                                a.id
+                              )
+                            }
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {/* MODALES */}
+      {modal && (
+        <div
+          className="modal-overlay"
+          onClick={() => setModal(null)}
+        >
+          <div
+            className="modal"
+            onClick={e =>
+              e.stopPropagation()
+            }
+            style={{
+              maxWidth: modal === 'historial' ? 800 : 520,
+            }}
+          >
+            <div className="modal-header">
+              <span className="section-title">
+                {modal === 'perfume' &&
+                  (editId
+                    ? 'Editar perfume'
+                    : 'Registrar perfume')}
+
+                {modal === 'venta' &&
+                  (editId
+                    ? 'Editar venta'
+                    : 'Registrar venta')}
+
+                {modal === 'abono' &&
+                  (editAbonoId
+                    ? 'Editar abono'
+                    : 'Registrar abono')}
+
+                {modal === 'historial' && 'Historial de ventas liquidadas'}
+              </span>
+
+              <button
+                className="btn-icon"
+                onClick={() => {
+                  setModal(null)
+                  setEditId(null)
+                  setEditAbonoId(null)
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="modal-body">
+              {error && (
+                <div
+                  style={{
+                    color: '#c45c5c',
+                    fontSize: '0.8rem',
+                    marginBottom: 12,
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+
+              {modal === 'historial' && (
+                <>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 10,
+                      marginBottom: 16,
+                    }}
+                  >
+                    <input
+                      className="form-input"
+                      placeholder="Buscar cliente..."
+                      value={historialFiltro.cliente}
+                      onChange={e =>
+                        setHistorialFiltro(f => ({
+                          ...f,
+                          cliente: e.target.value,
+                        }))
+                      }
+                    />
+                    <input
+                      className="form-input"
+                      placeholder="Buscar perfume..."
+                      value={historialFiltro.perfume}
+                      onChange={e =>
+                        setHistorialFiltro(f => ({
+                          ...f,
+                          perfume: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div
+                    className="table-wrap"
+                    style={{ maxHeight: 400, overflowY: 'auto' }}
+                  >
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Cliente</th>
+                          <th>Perfume</th>
+                          <th>Total</th>
+                          <th>Abonado</th>
+                          <th>Resta</th>
+                          <th>Notas</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ventasFiltradas.length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={7}
+                              style={{
+                                textAlign: 'center',
+                                color: 'var(--cream-dim)',
+                              }}
+                            >
+                              No hay ventas liquidadas
+                            </td>
+                          </tr>
+                        ) : (
+                          ventasFiltradas.map(v => (
+                            <tr key={v.id}>
+                              <td>{fmtDate(v.fecha)}</td>
+                              <td
+                                style={{
+                                  color: 'var(--cream)',
+                                }}
+                              >
+                                {v.cliente || '—'}
+                              </td>
+                              <td>{v.perfume_nombre}</td>
+                              <td>{fmt(v.total_venta)}</td>
+                              <td className="td-green">
+                                {fmt(v.abonado)}
+                              </td>
+                              <td className="td-gold">
+                                {fmt(v.resto)}
+                              </td>
+                              <td>
+                                {v.notas || '—'}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 16,
+                      display: 'flex',
+                      gap: 20,
+                      justifyContent: 'flex-end',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '0.85rem',
+                        color: 'var(--cream-dim)',
+                      }}
+                    >
+                      Total ventas:{' '}
+                      <strong style={{ color: 'var(--cream)' }}>
+                        {fmt(
+                          ventasFiltradas.reduce(
+                            (s, v) => s + v.total_venta,
+                            0
+                          )
+                        )}
+                      </strong>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '0.85rem',
+                        color: 'var(--cream-dim)',
+                      }}
+                    >
+                      Total cobrado:{' '}
+                      <strong style={{ color: '#4a8c6a' }}>
+                        {fmt(
+                          ventasFiltradas.reduce(
+                            (s, v) => s + v.abonado,
+                            0
+                          )
+                        )}
+                      </strong>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {modal === 'perfume' && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">
+                      Nombre del perfume *
+                    </label>
+
+                    <input
+                      className="form-input"
+                      value={perfumeForm.nombre}
+                      onChange={e =>
+                        sp(
+                          'nombre',
+                          e.target.value
+                        )
+                      }
+                      placeholder="Ej: Dior Sauvage"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      Proveedor
+                    </label>
+
+                    <input
+                      className="form-input"
+                      value={
+                        perfumeForm.proveedor
+                      }
+                      onChange={e =>
+                        sp(
+                          'proveedor',
+                          e.target.value
+                        )
+                      }
+                      placeholder="Nombre del proveedor"
+                    />
+                  </div>
+
+                  <div className="form-grid-2">
+                    <div className="form-group">
+                      <label className="form-label">
+                        Costo de proveedor ($) *
+                      </label>
+
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={
+                          perfumeForm.precio_proveedor
+                        }
+                        onChange={e =>
+                          sp(
+                            'precio_proveedor',
+                            e.target.value
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">
+                        Precio venta al público ($)
+                      </label>
+
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={
+                          perfumeForm.precio_publico
+                        }
+                        onChange={e =>
+                          sp(
+                            'precio_publico',
+                            e.target.value
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      Piezas compradas
+                    </label>
+
+                    <input
+                      type="number"
+                      min={1}
+                      className="form-input"
+                      value={
+                        perfumeForm.piezas_compradas
+                      }
+                      onChange={e =>
+                        setPiezas(
+                          e.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      border:
+                        '1px solid var(--noir-border)',
+                      borderRadius: 6,
+                      padding: 14,
+                      marginBottom: 14,
+                    }}
+                  >
+                    <div
+                      className="label"
+                      style={{
+                        marginBottom: 10,
+                      }}
+                    >
+                      ENVÍO DEL LOTE (opcional)
+                    </div>
+
+                    <div className="form-grid-2">
+                      <div
+                        className="form-group"
+                        style={{
+                          marginBottom: 0,
+                        }}
+                      >
+                        <label className="form-label">
+                          ¿Cuánto costó el envío?
+                          ($)
+                        </label>
+
+                        <input
+                          type="number"
+                          className="form-input"
+                          value={
+                            perfumeForm.costo_envio
+                          }
+                          onChange={e =>
+                            sp(
+                              'costo_envio',
+                              e.target.value
+                            )
+                          }
+                          placeholder="0 si no hubo envío"
+                        />
+                      </div>
+
+                      <div
+                        className="form-group"
+                        style={{
+                          marginBottom: 0,
+                        }}
+                      >
+                        <label className="form-label">
+                          ¿Entre cuántas piezas se
+                          reparte?
+                        </label>
+
+                        <input
+                          type="number"
+                          min={1}
+                          className="form-input"
+                          value={
+                            perfumeForm.piezas_envio
+                          }
+                          onChange={e =>
+                            sp(
+                              'piezas_envio',
+                              e.target.value
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: '0.75rem',
+                        color:
+                          'var(--cream-dim)',
+                        marginTop: 10,
+                      }}
+                    >
+                      Ej: compraste 4 perfumes y
+                      el envío fue $240 → pon
+                      envío 240 y reparte en 4 →{' '}
+                      {fmt(240 / 4)}/pieza. Si no
+                      cobraron envío, deja en 0.
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: '0.82rem',
+                      color:
+                        'var(--cream-dim)',
+                      marginBottom: 12,
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    Envío por pieza:{' '}
+                    <strong
+                      style={{
+                        color:
+                          'var(--cream)',
+                      }}
+                    >
+                      {fmt(envioU())}
+                    </strong>
+                    <br />
+
+                    Costo unitario real:{' '}
+                    <strong
+                      style={{
+                        color:
+                          'var(--cream)',
+                      }}
+                    >
+                      {fmt(costoU())}
+                    </strong>
+                    <br />
+
+                    Ganancia unitaria:{' '}
+                    <strong
+                      style={{
+                        color:
+                          gananciaU() >= 0
+                            ? '#4a8c6a'
+                            : '#c45c5c',
+                      }}
+                    >
+                      {fmt(gananciaU())}
+                    </strong>
+
+                    {' · '}Si vendes todo:{' '}
+
+                    <strong
+                      style={{
+                        color:
+                          'var(--gold)',
+                      }}
+                    >
+                      {fmt(
+                        gananciaU() *
+                        (parseInt(
+                          perfumeForm.piezas_compradas,
+                          10
+                        ) || 0)
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      Notas
+                    </label>
+
+                    <textarea
+                      className="form-input"
+                      value={
+                        perfumeForm.notas
+                      }
+                      onChange={e =>
+                        sp(
+                          'notas',
+                          e.target.value
+                        )
+                      }
+                    />
+                  </div>
+                </>
+              )}
+
+              {modal === 'venta' && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">
+                      Perfume *
+                    </label>
+
+                    <select
+                      className="form-input"
+                      value={
+                        ventaForm.perfume_id
+                      }
+                      onChange={e => {
+                        const id =
+                          e.target.value
+
+                        sv(
+                          'perfume_id',
+                          id
+                        )
+
+                        const p =
+                          perfumes.find(
+                            x =>
+                              x.id ===
+                              parseInt(
+                                id,
+                                10
+                              )
+                          )
+
+                        if (p) {
+                          sv(
+                            'precio_unitario',
+                            p.precio_publico
+                          )
+                        }
+                      }}
+                    >
+                      <option value="">
+                        Seleccionar...
+                      </option>
+
+                      {perfumes
+                        .filter(
+                          p =>
+                            p.stock > 0
+                        )
+                        .map(p => (
+                          <option
+                            key={p.id}
+                            value={p.id}
+                          >
+                            {p.nombre} · stock{' '}
+                            {p.stock} · público{' '}
+                            {fmt(
+                              p.precio_publico
+                            )}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      Cliente
+                    </label>
+
+                    <input
+                      className="form-input"
+                      value={
+                        ventaForm.cliente
+                      }
+                      onChange={e =>
+                        sv(
+                          'cliente',
+                          e.target.value
+                        )
+                      }
+                      placeholder="¿A quién se lo vendimos?"
+                    />
+                  </div>
+
+                  <div className="form-grid-2">
+                    <div className="form-group">
+                      <label className="form-label">
+                        Cantidad
+                      </label>
+
+                      <input
+                        type="number"
+                        min={1}
+                        className="form-input"
+                        value={
+                          ventaForm.cantidad
+                        }
+                        onChange={e =>
+                          sv(
+                            'cantidad',
+                            e.target.value
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">
+                        Precio unitario venta ($)
+                      </label>
+
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={
+                          ventaForm.precio_unitario
+                        }
+                        onChange={e =>
+                          sv(
+                            'precio_unitario',
+                            e.target.value
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      color:
+                        'var(--gold)',
+                      marginBottom: 12,
+                    }}
+                  >
+                    Total:{' '}
+                    <strong>
+                      {fmt(
+                        totalVenta()
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      Forma de pago
+                    </label>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 16,
+                      }}
+                    >
+                      <label
+                        style={{
+                          display: 'flex',
+                          gap: 6,
+                          alignItems:
+                            'center',
+                          cursor:
+                            'pointer',
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          checked={
+                            ventaForm.tipo_pago ===
+                            'contado'
+                          }
+                          onChange={() =>
+                            sv(
+                              'tipo_pago',
+                              'contado'
+                            )
+                          }
+                        />
+
+                        Un solo pago
+                      </label>
+
+                      <label
+                        style={{
+                          display: 'flex',
+                          gap: 6,
+                          alignItems:
+                            'center',
+                          cursor:
+                            'pointer',
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          checked={
+                            ventaForm.tipo_pago ===
+                            'abonos'
+                          }
+                          onChange={() =>
+                            sv(
+                              'tipo_pago',
+                              'abonos'
+                            )
+                          }
+                        />
+
+                        Varios pagos / abonos
+                      </label>
+                    </div>
+                  </div>
+
+                  {ventaForm.tipo_pago ===
+                    'abonos' && (
+                      <div className="form-group">
+                        <label className="form-label">
+                          Abono inicial ($)
+                        </label>
+
+                        <input
+                          type="number"
+                          className="form-input"
+                          value={
+                            ventaForm.abonado
+                          }
+                          onChange={e =>
+                            sv(
+                              'abonado',
+                              e.target.value
+                            )
+                          }
+                          placeholder="0 si no deja nada hoy"
+                        />
+
+                        <div
+                          style={{
+                            fontSize:
+                              '0.72rem',
+                            color:
+                              'var(--cream-dim)',
+                            marginTop: 4,
+                          }}
+                        >
+                          Resta:{' '}
+                          {fmt(
+                            Math.max(
+                              0,
+                              totalVenta() -
+                              (Number(
+                                ventaForm.abonado
+                              ) || 0)
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      Fecha
+                    </label>
+
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={
+                        ventaForm.fecha
+                      }
+                      onChange={e =>
+                        sv(
+                          'fecha',
+                          e.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      Notas
+                    </label>
+
+                    <textarea
+                      className="form-input"
+                      value={
+                        ventaForm.notas
+                      }
+                      onChange={e =>
+                        sv(
+                          'notas',
+                          e.target.value
+                        )
+                      }
+                    />
+                  </div>
+                </>
+              )}
+
+              {modal === 'abono' &&
+                ventaAbono && (
+                  <>
+                    <div
+                      style={{
+                        fontSize:
+                          '0.85rem',
+                        color:
+                          'var(--cream-dim)',
+                        marginBottom: 14,
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      Cliente:{' '}
+                      <strong
+                        style={{
+                          color:
+                            'var(--cream)',
+                        }}
+                      >
+                        {ventaAbono.cliente ||
+                          '—'}
+                      </strong>
+                      <br />
+
+                      Total{' '}
+                      {fmt(
+                        ventaAbono.total_venta
+                      )}{' '}
+                      · Abonado{' '}
+                      {fmt(
+                        ventaAbono.abonado
+                      )}{' '}
+                      ·{' '}
+
+                      <span
+                        style={{
+                          color:
+                            'var(--gold)',
+                        }}
+                      >
+                        Resta{' '}
+                        {fmt(
+                          ventaAbono.resto
+                        )}
+                      </span>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">
+                        Monto del abono ($)
+                      </label>
+
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={
+                          abonoForm.monto
+                        }
+                        onChange={e =>
+                          setAbonoForm(
+                            f => ({
+                              ...f,
+                              monto:
+                                e.target
+                                  .value,
+                            })
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">
+                        Fecha
+                      </label>
+
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={
+                          abonoForm.fecha
+                        }
+                        onChange={e =>
+                          setAbonoForm(
+                            f => ({
+                              ...f,
+                              fecha:
+                                e.target
+                                  .value,
+                            })
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">
+                        Notas
+                      </label>
+
+                      <input
+                        className="form-input"
+                        value={
+                          abonoForm.notas
+                        }
+                        onChange={e =>
+                          setAbonoForm(
+                            f => ({
+                              ...f,
+                              notas:
+                                e.target
+                                  .value,
+                            })
+                          )
+                        }
+                      />
+                    </div>
+                  </>
+                )}
+            </div>
+
+            <div className="modal-footer">
+              <button
+                className="btn btn-outline"
+                onClick={() => {
+                  setModal(null)
+                  setEditId(null)
+                  setEditAbonoId(null)
+                }}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Kpi({ label, value, color }) {
+  return (
+    <div className="stat-card">
+      <div className="label">
+        {label}
+      </div>
+
+      <div
+        className="stat-value"
+        style={{
+          color:
+            color ||
+            'var(--cream)',
+          fontSize: '1.15rem',
+        }}
+      >
+        {value}
+      </div>
     </div>
   )
 }
