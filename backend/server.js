@@ -82,7 +82,7 @@ const GRUPOS_MARCAS = {
       const anioChar = codigo[1];
       const diaStr = codigo.substring(2, 4);
       const dia = parseInt(diaStr, 10);
-      
+
       const anios = {
         'X': 2023, 'W': 2022, 'V': 2021, 'U': 2020,
         'T': 2019, 'S': 2018, 'R': 2017, 'Q': 2016,
@@ -91,13 +91,13 @@ const GRUPOS_MARCAS = {
         'F': 2007, 'E': 2006, 'D': 2005, 'C': 2004,
         'B': 2003, 'A': 2002
       };
-      
+
       const anio = anios[anioChar] || null;
-      
+
       if (!anio || dia < 1 || dia > 366) {
         return { valido: false, razon: 'Código no reconocido para esta marca' };
       }
-      
+
       const fecha = new Date(anio, 0, dia);
       return {
         valido: true,
@@ -108,20 +108,20 @@ const GRUPOS_MARCAS = {
       };
     }
   },
-  
+
   coty: {
     nombre: 'Coty (Versace, Hugo Boss, CK)',
     formato: /^\d{4}$/,
     decodificar: (codigo) => {
       const anio2 = parseInt(codigo.substring(0, 2), 10);
       const semana = parseInt(codigo.substring(2, 4), 10);
-      
+
       const anio = anio2 < 50 ? 2000 + anio2 : 1900 + anio2;
-      
+
       if (semana < 1 || semana > 53) {
         return { valido: false, razon: 'Semana inválida en el código' };
       }
-      
+
       const fecha = new Date(anio, 0, 1 + (semana - 1) * 7);
       return {
         valido: true,
@@ -132,7 +132,7 @@ const GRUPOS_MARCAS = {
       };
     }
   },
-  
+
   loreal: {
     nombre: "L'Oréal (YSL, Armani, Lancôme)",
     formato: /^[A-Z0-9]{5,6}$/,
@@ -145,13 +145,13 @@ const GRUPOS_MARCAS = {
         'E': 2011, 'D': 2010, 'C': 2009, 'B': 2008,
         'A': 2007
       };
-      
+
       const anio = anios[primerChar] || null;
-      
+
       if (!anio) {
         return { valido: false, razon: 'Código no reconocido para esta marca' };
       }
-      
+
       return {
         valido: true,
         anio: anio,
@@ -160,7 +160,7 @@ const GRUPOS_MARCAS = {
       };
     }
   },
-  
+
   estee: {
     nombre: 'Estée Lauder (Tom Ford, Clinique, MAC)',
     formato: /^[A-Z0-9]{3}$/,
@@ -170,18 +170,31 @@ const GRUPOS_MARCAS = {
         '4': 2024, '3': 2023, '2': 2022, '1': 2021, '0': 2020,
         '9': 2019, '8': 2018, '7': 2017, '6': 2016, '5': 2015
       };
-      
+
       const anio = anios[anioChar] || null;
-      
+
       if (!anio) {
         return { valido: false, razon: 'Código no reconocido para esta marca' };
       }
-      
+
       return {
         valido: true,
         anio: anio,
         fecha_estimada: `${anio}-01-01`,
         descripcion: `Producido aproximadamente en el año ${anio}`
+      };
+    }
+  },
+
+  armaf: {
+    nombre: 'Armaf (Odyssey, Club de Nuit, etc.)',
+    formato: /^[A-Z0-9,\s]{3,20}$/,
+    decodificar: (codigo) => {
+      return {
+        valido: true,
+        fecha_estimada: null,
+        descripcion: 'Armaf imprime la fecha de producción directamente en la caja como "PD: MM/YYYY". El batch code es solo un identificador interno de fábrica.',
+        esArmaf: true
       };
     }
   }
@@ -190,15 +203,30 @@ const GRUPOS_MARCAS = {
 function decodificarBatchCode(marca, codigo) {
   const marcaLower = marca.toLowerCase().trim();
   const codigoUpper = codigo.toUpperCase().trim();
-  
+
+  // Detección específica de Armaf
+  if (marcaLower.includes('armaf')) {
+    return {
+      reconocido: true,
+      valido: true,
+      esArmaf: true,
+      marca: marca,
+      grupo: 'Armaf',
+      codigo: codigoUpper,
+      fecha_estimada: null,
+      mensaje: '✅ Marca reconocida: Armaf. La fecha de producción NO está en el batch code. Busca el texto "PD: MM/YYYY" impreso en la caja (ejemplo: PD: 12/2025 = Diciembre 2025).'
+    };
+  }
+
   let grupo = null;
   for (const [key, value] of Object.entries(GRUPOS_MARCAS)) {
+    if (key === 'armaf') continue;
     if (marcaLower.includes(key) || value.nombre.toLowerCase().includes(marcaLower)) {
       grupo = value;
       break;
     }
   }
-  
+
   if (!grupo) {
     return {
       reconocido: false,
@@ -207,7 +235,7 @@ function decodificarBatchCode(marca, codigo) {
       mensaje: `No tenemos reglas específicas para la marca "${marca}". Verifica manualmente que el código del frasco coincida con el de la caja.`
     };
   }
-  
+
   if (!grupo.formato.test(codigoUpper)) {
     return {
       reconocido: true,
@@ -218,9 +246,9 @@ function decodificarBatchCode(marca, codigo) {
       mensaje: `El formato del código no coincide con el esperado para ${grupo.nombre}.`
     };
   }
-  
+
   const resultado = grupo.decodificar(codigoUpper);
-  
+
   return {
     reconocido: true,
     valido: resultado.valido,
@@ -230,7 +258,7 @@ function decodificarBatchCode(marca, codigo) {
     fecha_estimada: resultado.fecha_estimada,
     descripcion: resultado.descripcion,
     razon: resultado.razon,
-    mensaje: resultado.valido 
+    mensaje: resultado.valido
       ? `✅ Código válido para ${grupo.nombre}. ${resultado.descripcion}.`
       : `⚠️ ${resultado.razon}`
   };
@@ -304,6 +332,7 @@ app.get('/api/resumen', async (req, res) => {
       }
     });
 
+    // Total cobrado = abono inicial (ventas.abonado) + abonos adicionales
     let totalCobradoVentas = 0;
     V.forEach(v => {
       const abonadoInicial = Number(v.abonado) || 0;
@@ -377,11 +406,11 @@ app.get('/api/resumen', async (req, res) => {
 app.post('/api/verificar-batch', authenticateToken, async (req, res) => {
   try {
     const { marca, codigo } = req.body;
-    
+
     if (!marca || !codigo) {
       return res.status(400).json({ error: 'Marca y código son obligatorios' });
     }
-    
+
     const resultado = decodificarBatchCode(marca, codigo);
     res.json(resultado);
   } catch (error) {
@@ -399,6 +428,16 @@ app.get('/api/perfumes', async (req, res) => {
   if (error) return res.status(400).json({ error: error.message });
 
   const { data: ventas } = await supabase.from('ventas').select('*');
+  const { data: abonos } = await supabase.from('abonos').select('*');
+
+  // Agrupar abonos por venta
+  const abonosPorVenta = {};
+  (abonos || []).forEach(a => {
+    if (a.venta_id) {
+      abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
+    }
+  });
+
   const vendPor = {};
   const cobPor = {};
   const pcPor = {};
@@ -407,7 +446,9 @@ app.get('/api/perfumes', async (req, res) => {
     if (!v.perfume_id) return;
     const pid = v.perfume_id;
     const cantidad = Number(v.cantidad) || 0;
-    const abonado = Number(v.abonado) || 0;
+    const abonadoInicial = Number(v.abonado) || 0;
+    const abonosExtra = abonosPorVenta[v.id] || 0;
+    const abonado = abonadoInicial + abonosExtra;
     const total = Number(v.total_venta) || 0;
 
     vendPor[pid] = (vendPor[pid] || 0) + cantidad;
@@ -494,9 +535,12 @@ app.get('/api/ventas', async (req, res) => {
   const resultado = (data || []).map(v => {
     const total = Number(v.total_venta) || 0;
 
-    const abonado = (v.abonos || []).reduce(
+    // ✅ CORREGIDO: Sumar abono inicial + abonos adicionales
+    const abonoInicial = Number(v.abonado) || 0;
+    const abonosExtra = (v.abonos || []).reduce(
       (s, a) => s + (Number(a.monto) || 0), 0
     );
+    const abonado = abonoInicial + abonosExtra;
 
     const resto = Math.max(total - abonado, 0);
     const pct_pagado = total > 0 ? Math.round((abonado / total) * 100) : 0;
@@ -636,39 +680,39 @@ app.post('/api/fondo/movimientos', async (req, res) => {
   if (!concepto || !monto || !fecha) {
     return res.status(400).json({ error: 'Concepto, monto y fecha son obligatorios' });
   }
-  
+
   if (tipo === 'retiro') {
     const { data: ventas } = await supabase.from('ventas').select('*');
     const { data: abonos } = await supabase.from('abonos').select('*');
     const { data: fondoMovs } = await supabase.from('fondo_movimientos').select('*');
-    
+
     const abonosPorVenta = {};
     (abonos || []).forEach(a => {
       if (a.venta_id) {
         abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
       }
     });
-    
+
     let totalCobrado = 0;
     (ventas || []).forEach(v => {
       const abonadoInicial = Number(v.abonado) || 0;
       const abonosExtra = abonosPorVenta[v.id] || 0;
       totalCobrado += abonadoInicial + abonosExtra;
     });
-    
+
     const totalRetirado = (fondoMovs || [])
       .filter(m => m.tipo === 'retiro')
       .reduce((sum, m) => sum + Number(m.monto), 0);
-    
+
     const disponible = totalCobrado - totalRetirado;
-    
+
     if (Number(monto) > disponible) {
-      return res.status(400).json({ 
-        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}` 
+      return res.status(400).json({
+        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}`
       });
     }
   }
-  
+
   const { data, error } = await supabase.from('fondo_movimientos').insert({
     concepto,
     monto: Number(monto),
@@ -686,45 +730,45 @@ app.put('/api/fondo/movimientos/:id', async (req, res) => {
   if (!concepto || !monto || !fecha) {
     return res.status(400).json({ error: 'Concepto, monto y fecha son obligatorios' });
   }
-  
+
   const { data: original } = await supabase
     .from('fondo_movimientos')
     .select('*')
     .eq('id', id)
     .single();
-    
+
   if (original && original.tipo === 'retiro' && tipo === 'retiro') {
     const { data: ventas } = await supabase.from('ventas').select('*');
     const { data: abonos } = await supabase.from('abonos').select('*');
     const { data: fondoMovs } = await supabase.from('fondo_movimientos').select('*');
-    
+
     const abonosPorVenta = {};
     (abonos || []).forEach(a => {
       if (a.venta_id) {
         abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
       }
     });
-    
+
     let totalCobrado = 0;
     (ventas || []).forEach(v => {
       const abonadoInicial = Number(v.abonado) || 0;
       const abonosExtra = abonosPorVenta[v.id] || 0;
       totalCobrado += abonadoInicial + abonosExtra;
     });
-    
+
     const totalRetirado = (fondoMovs || [])
       .filter(m => m.tipo === 'retiro' && m.id !== parseInt(id))
       .reduce((sum, m) => sum + Number(m.monto), 0);
-    
+
     const disponible = totalCobrado - totalRetirado;
-    
+
     if (Number(monto) > disponible) {
-      return res.status(400).json({ 
-        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}` 
+      return res.status(400).json({
+        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}`
       });
     }
   }
-  
+
   const { data, error } = await supabase.from('fondo_movimientos').update({
     concepto,
     monto: Number(monto),
