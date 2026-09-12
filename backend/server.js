@@ -344,7 +344,14 @@ app.get('/api/resumen', async (req, res) => {
       .filter(m => m.tipo === 'retiro')
       .reduce((sum, m) => sum + Number(m.monto), 0);
 
-    const dinero_en_caja = Math.max(totalCobradoVentas - totalRetiradoFondo, 0);
+    const totalIngresadoFondo = (fondoMovimientos || [])
+      .filter(m => m.tipo === 'ingreso')
+      .reduce((sum, m) => sum + Number(m.monto), 0);
+
+    const dinero_en_caja = Math.max(
+      totalCobradoVentas + totalIngresadoFondo - totalRetiradoFondo,
+      0
+    );
 
     let por_cobrar = 0;
     let capital_en_inventario = 0;
