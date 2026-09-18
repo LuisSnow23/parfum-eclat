@@ -208,9 +208,13 @@ export default function Perfumes() {
     setPerfumeForm(emptyPerfume)
   }
 
+  // ✅ CAMBIO 1: openEditVenta toma el primer abono
   const openEditVenta = (v) => {
     setError('')
     setEditId(v.id)
+
+    // Encontrar el primer abono (el inicial)
+    const primerAbono = (v.abonos || []).sort((a, b) => a.id - b.id)[0]
 
     setVentaForm({
       perfume_id: String(v.perfume_id),
@@ -218,7 +222,7 @@ export default function Perfumes() {
       cantidad: v.cantidad || 1,
       precio_unitario: v.precio_unitario ?? '',
       tipo_pago: v.tipo_pago || 'contado',
-      abonado: v.abonado ?? '',
+      abonado: primerAbono ? primerAbono.monto : '',
       fecha: v.fecha || hoy,
       notas: v.notas || '',
     })
@@ -226,6 +230,7 @@ export default function Perfumes() {
     setModal('venta')
   }
 
+  // ✅ CAMBIO 2: submitVenta envía abonado al editar
   const submitVenta = async () => {
     setError('')
 
@@ -238,8 +243,15 @@ export default function Perfumes() {
 
     if (editId) {
       const res = await api.put(`/ventas/${editId}`, {
-        ...ventaForm,
+        perfume_id: ventaForm.perfume_id,
+        cliente: ventaForm.cliente,
+        cantidad: ventaForm.cantidad,
+        precio_unitario: ventaForm.precio_unitario,
+        tipo_pago: ventaForm.tipo_pago,
+        fecha: ventaForm.fecha,
+        notas: ventaForm.notas,
         total_venta: total,
+        abonado: ventaForm.abonado
       })
 
       if (res.error) {
