@@ -153,7 +153,6 @@ app.get('/api/resumen', async (req, res) => {
       .filter(m => m.tipo === 'ingreso')
       .reduce((sum, m) => sum + Number(m.monto), 0);
 
-    // ✅ Dinero en caja = cobrado de ventas + ingresos al fondo - retiros del fondo
     const dinero_en_caja = Math.max(
       totalCobradoVentas + totalIngresadoFondo - totalRetiradoFondo,
       0
@@ -237,7 +236,7 @@ app.get('/api/perfumes', async (req, res) => {
     if (!v.perfume_id) return;
     const pid = v.perfume_id;
     const cantidad = Number(v.cantidad) || 0;
-    const abonado = abonosPorVenta[v.id] || 0; // ✅ usar abonos
+    const abonado = abonosPorVenta[v.id] || 0;
     const total = Number(v.total_venta) || 0;
 
     vendPor[pid] = (vendPor[pid] || 0) + cantidad;
@@ -322,7 +321,7 @@ app.get('/api/ventas', async (req, res) => {
   const resultado = (data || []).map(v => {
     const total = Number(v.total_venta) || 0;
 
-    // ✅ SOLO usar abonos
+    // ✅ SOLO usar abonos de la tabla abonos
     const abonado = (v.abonos || []).reduce(
       (s, a) => s + (Number(a.monto) || 0), 0
     );
@@ -509,24 +508,24 @@ app.post('/api/fondo/movimientos', async (req, res) => {
   if (!concepto || !monto || !fecha) {
     return res.status(400).json({ error: 'Concepto, monto y fecha son obligatorios' });
   }
-
+  
   if (tipo === 'retiro') {
     const { data: ventas } = await supabase.from('ventas').select('*');
     const { data: abonos } = await supabase.from('abonos').select('*');
     const { data: fondoMovs } = await supabase.from('fondo_movimientos').select('*');
-
+    
     const abonosPorVenta = {};
     (abonos || []).forEach(a => {
       if (a.venta_id) {
         abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
       }
     });
-
+    
     let totalCobrado = 0;
     (ventas || []).forEach(v => {
       totalCobrado += abonosPorVenta[v.id] || 0;
     });
-
+    
     const totalRetirado = (fondoMovs || [])
       .filter(m => m.tipo === 'retiro')
       .reduce((sum, m) => sum + Number(m.monto), 0);
@@ -534,16 +533,16 @@ app.post('/api/fondo/movimientos', async (req, res) => {
     const totalIngresado = (fondoMovs || [])
       .filter(m => m.tipo === 'ingreso')
       .reduce((sum, m) => sum + Number(m.monto), 0);
-
+    
     const disponible = totalCobrado + totalIngresado - totalRetirado;
-
+    
     if (Number(monto) > disponible) {
-      return res.status(400).json({
-        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}`
+      return res.status(400).json({ 
+        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}` 
       });
     }
   }
-
+  
   const { data, error } = await supabase.from('fondo_movimientos').insert({
     concepto,
     monto: Number(monto),
@@ -561,30 +560,30 @@ app.put('/api/fondo/movimientos/:id', async (req, res) => {
   if (!concepto || !monto || !fecha) {
     return res.status(400).json({ error: 'Concepto, monto y fecha son obligatorios' });
   }
-
+  
   const { data: original } = await supabase
     .from('fondo_movimientos')
     .select('*')
     .eq('id', id)
     .single();
-
+    
   if (original && original.tipo === 'retiro' && tipo === 'retiro') {
     const { data: ventas } = await supabase.from('ventas').select('*');
     const { data: abonos } = await supabase.from('abonos').select('*');
     const { data: fondoMovs } = await supabase.from('fondo_movimientos').select('*');
-
+    
     const abonosPorVenta = {};
     (abonos || []).forEach(a => {
       if (a.venta_id) {
         abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
       }
     });
-
+    
     let totalCobrado = 0;
     (ventas || []).forEach(v => {
       totalCobrado += abonosPorVenta[v.id] || 0;
     });
-
+    
     const totalRetirado = (fondoMovs || [])
       .filter(m => m.tipo === 'retiro' && m.id !== parseInt(id))
       .reduce((sum, m) => sum + Number(m.monto), 0);
@@ -592,16 +591,16 @@ app.put('/api/fondo/movimientos/:id', async (req, res) => {
     const totalIngresado = (fondoMovs || [])
       .filter(m => m.tipo === 'ingreso')
       .reduce((sum, m) => sum + Number(m.monto), 0);
-
+    
     const disponible = totalCobrado + totalIngresado - totalRetirado;
-
+    
     if (Number(monto) > disponible) {
-      return res.status(400).json({
-        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}`
+      return res.status(400).json({ 
+        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}` 
       });
     }
   }
-
+  
   const { data, error } = await supabase.from('fondo_movimientos').update({
     concepto,
     monto: Number(monto),
