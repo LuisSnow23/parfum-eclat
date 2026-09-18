@@ -132,7 +132,6 @@ app.get('/api/resumen', async (req, res) => {
       }
     });
 
-    // ✅ SOLO usar abonos de la tabla abonos
     const abonosPorVenta = {};
     (abonos || []).forEach(a => {
       if (a.venta_id) {
@@ -140,9 +139,12 @@ app.get('/api/resumen', async (req, res) => {
       }
     });
 
+    // ✅ Suma: ventas.abonado + abonos adicionales
     let totalCobradoVentas = 0;
     V.forEach(v => {
-      totalCobradoVentas += abonosPorVenta[v.id] || 0;
+      const abonadoInicial = Number(v.abonado) || 0;
+      const abonosExtra = abonosPorVenta[v.id] || 0;
+      totalCobradoVentas += abonadoInicial + abonosExtra;
     });
 
     const totalRetiradoFondo = (fondoMovimientos || [])
@@ -178,7 +180,9 @@ app.get('/api/resumen', async (req, res) => {
 
     V.forEach(v => {
       const total = Number(v.total_venta) || 0;
-      const abonadoTotal = abonosPorVenta[v.id] || 0;
+      const abonadoInicial = Number(v.abonado) || 0;
+      const abonosExtra = abonosPorVenta[v.id] || 0;
+      const abonadoTotal = abonadoInicial + abonosExtra;
       por_cobrar += Math.max(total - abonadoTotal, 0);
     });
 
@@ -219,15 +223,6 @@ app.get('/api/perfumes', async (req, res) => {
   if (error) return res.status(400).json({ error: error.message });
 
   const { data: ventas } = await supabase.from('ventas').select('*');
-  const { data: abonos } = await supabase.from('abonos').select('*');
-
-  const abonosPorVenta = {};
-  (abonos || []).forEach(a => {
-    if (a.venta_id) {
-      abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
-    }
-  });
-
   const vendPor = {};
   const cobPor = {};
   const pcPor = {};
@@ -236,7 +231,7 @@ app.get('/api/perfumes', async (req, res) => {
     if (!v.perfume_id) return;
     const pid = v.perfume_id;
     const cantidad = Number(v.cantidad) || 0;
-    const abonado = abonosPorVenta[v.id] || 0;
+    const abonado = Number(v.abonado) || 0;
     const total = Number(v.total_venta) || 0;
 
     vendPor[pid] = (vendPor[pid] || 0) + cantidad;
@@ -321,10 +316,12 @@ app.get('/api/ventas', async (req, res) => {
   const resultado = (data || []).map(v => {
     const total = Number(v.total_venta) || 0;
 
-    // ✅ SOLO usar abonos de la tabla abonos
-    const abonado = (v.abonos || []).reduce(
+    // ✅ Suma: ventas.abonado + abonos adicionales
+    const abonoInicial = Number(v.abonado) || 0;
+    const abonosExtra = (v.abonos || []).reduce(
       (s, a) => s + (Number(a.monto) || 0), 0
     );
+    const abonado = abonoInicial + abonosExtra;
 
     const resto = Math.max(total - abonado, 0);
     const pct_pagado = total > 0 ? Math.round((abonado / total) * 100) : 0;
@@ -354,9 +351,6 @@ app.post('/api/ventas', async (req, res) => {
     return res.status(400).json({ error: 'Perfume y fecha requeridos' });
   }
 
-  const abonoInicial = Number(abonado) || 0;
-
-  // 1. Insertar la venta con abonado = 0
   const { data, error } = await supabase.from('ventas').insert({
     perfume_id,
     cliente,
@@ -364,23 +358,12 @@ app.post('/api/ventas', async (req, res) => {
     precio_unitario: Number(precio_unitario) || 0,
     total_venta: Number(total_venta) || 0,
     tipo_pago,
-    abonado: 0,
+    abonado: Number(abonado) || 0,
     fecha,
     notas
   }).select();
 
   if (error) return res.status(400).json({ error: error.message });
-
-  // 2. Si hay abono inicial, crear el registro en abonos
-  if (abonoInicial > 0) {
-    await supabase.from('abonos').insert({
-      venta_id: data[0].id,
-      monto: abonoInicial,
-      fecha: fecha,
-      notas: tipo_pago === 'contado' ? 'Pago completo' : 'Abono inicial'
-    });
-  }
-
   res.json({ id: data[0].id });
 });
 
@@ -388,10 +371,9 @@ app.put('/api/ventas/:id', async (req, res) => {
   const { id } = req.params;
   const {
     perfume_id, cliente, cantidad, precio_unitario,
-    total_venta, tipo_pago, fecha, notas, abonado
+    total_venta, tipo_pago, abonado, fecha, notas
   } = req.body;
 
-  // 1. Actualizar la venta SIN tocar el campo abonado
   const { data, error } = await supabase.from('ventas').update({
     perfume_id,
     cliente,
@@ -399,41 +381,12 @@ app.put('/api/ventas/:id', async (req, res) => {
     precio_unitario: Number(precio_unitario) || 0,
     total_venta: Number(total_venta) || 0,
     tipo_pago,
+    abonado: Number(abonado) || 0,
     fecha,
     notas
   }).eq('id', id).select();
 
   if (error) return res.status(400).json({ error: error.message });
-
-  // 2. Si el usuario editó el abono inicial, actualizarlo en la tabla abonos
-  if (abonado !== undefined) {
-    const nuevoAbono = Number(abonado) || 0;
-
-    // Buscar el primer abono de esa venta (el inicial)
-    const { data: abonos } = await supabase
-      .from('abonos')
-      .select('*')
-      .eq('venta_id', id)
-      .order('id', { ascending: true })
-      .limit(1);
-
-    if (abonos && abonos.length > 0) {
-      // Ya existe un abono inicial → actualizarlo
-      await supabase
-        .from('abonos')
-        .update({ monto: nuevoAbono })
-        .eq('id', abonos[0].id);
-    } else if (nuevoAbono > 0) {
-      // No existe abono inicial → crearlo
-      await supabase.from('abonos').insert({
-        venta_id: Number(id),
-        monto: nuevoAbono,
-        fecha: fecha,
-        notas: 'Abono inicial'
-      });
-    }
-  }
-
   res.json({ id: data[0].id });
 });
 
@@ -508,24 +461,26 @@ app.post('/api/fondo/movimientos', async (req, res) => {
   if (!concepto || !monto || !fecha) {
     return res.status(400).json({ error: 'Concepto, monto y fecha son obligatorios' });
   }
-  
+
   if (tipo === 'retiro') {
     const { data: ventas } = await supabase.from('ventas').select('*');
     const { data: abonos } = await supabase.from('abonos').select('*');
     const { data: fondoMovs } = await supabase.from('fondo_movimientos').select('*');
-    
+
     const abonosPorVenta = {};
     (abonos || []).forEach(a => {
       if (a.venta_id) {
         abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
       }
     });
-    
+
     let totalCobrado = 0;
     (ventas || []).forEach(v => {
-      totalCobrado += abonosPorVenta[v.id] || 0;
+      const abonadoInicial = Number(v.abonado) || 0;
+      const abonosExtra = abonosPorVenta[v.id] || 0;
+      totalCobrado += abonadoInicial + abonosExtra;
     });
-    
+
     const totalRetirado = (fondoMovs || [])
       .filter(m => m.tipo === 'retiro')
       .reduce((sum, m) => sum + Number(m.monto), 0);
@@ -533,16 +488,16 @@ app.post('/api/fondo/movimientos', async (req, res) => {
     const totalIngresado = (fondoMovs || [])
       .filter(m => m.tipo === 'ingreso')
       .reduce((sum, m) => sum + Number(m.monto), 0);
-    
+
     const disponible = totalCobrado + totalIngresado - totalRetirado;
-    
+
     if (Number(monto) > disponible) {
-      return res.status(400).json({ 
-        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}` 
+      return res.status(400).json({
+        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}`
       });
     }
   }
-  
+
   const { data, error } = await supabase.from('fondo_movimientos').insert({
     concepto,
     monto: Number(monto),
@@ -560,30 +515,32 @@ app.put('/api/fondo/movimientos/:id', async (req, res) => {
   if (!concepto || !monto || !fecha) {
     return res.status(400).json({ error: 'Concepto, monto y fecha son obligatorios' });
   }
-  
+
   const { data: original } = await supabase
     .from('fondo_movimientos')
     .select('*')
     .eq('id', id)
     .single();
-    
+
   if (original && original.tipo === 'retiro' && tipo === 'retiro') {
     const { data: ventas } = await supabase.from('ventas').select('*');
     const { data: abonos } = await supabase.from('abonos').select('*');
     const { data: fondoMovs } = await supabase.from('fondo_movimientos').select('*');
-    
+
     const abonosPorVenta = {};
     (abonos || []).forEach(a => {
       if (a.venta_id) {
         abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
       }
     });
-    
+
     let totalCobrado = 0;
     (ventas || []).forEach(v => {
-      totalCobrado += abonosPorVenta[v.id] || 0;
+      const abonadoInicial = Number(v.abonado) || 0;
+      const abonosExtra = abonosPorVenta[v.id] || 0;
+      totalCobrado += abonadoInicial + abonosExtra;
     });
-    
+
     const totalRetirado = (fondoMovs || [])
       .filter(m => m.tipo === 'retiro' && m.id !== parseInt(id))
       .reduce((sum, m) => sum + Number(m.monto), 0);
@@ -591,16 +548,16 @@ app.put('/api/fondo/movimientos/:id', async (req, res) => {
     const totalIngresado = (fondoMovs || [])
       .filter(m => m.tipo === 'ingreso')
       .reduce((sum, m) => sum + Number(m.monto), 0);
-    
+
     const disponible = totalCobrado + totalIngresado - totalRetirado;
-    
+
     if (Number(monto) > disponible) {
-      return res.status(400).json({ 
-        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}` 
+      return res.status(400).json({
+        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}`
       });
     }
   }
-  
+
   const { data, error } = await supabase.from('fondo_movimientos').update({
     concepto,
     monto: Number(monto),
