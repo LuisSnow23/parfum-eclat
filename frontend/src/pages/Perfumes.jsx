@@ -166,13 +166,9 @@ export default function Perfumes() {
     setPerfumeForm(emptyPerfume)
   }
 
-  // ✅ CAMBIO 1: openEditVenta toma el primer abono
   const openEditVenta = (v) => {
     setError('')
     setEditId(v.id)
-
-    // Encontrar el primer abono (el inicial)
-    const primerAbono = (v.abonos || []).sort((a, b) => a.id - b.id)[0]
 
     setVentaForm({
       perfume_id: String(v.perfume_id),
@@ -180,7 +176,7 @@ export default function Perfumes() {
       cantidad: v.cantidad || 1,
       precio_unitario: v.precio_unitario ?? '',
       tipo_pago: v.tipo_pago || 'contado',
-      abonado: primerAbono ? primerAbono.monto : '',
+      abonado: v.abonado ?? '',
       fecha: v.fecha || hoy,
       notas: v.notas || '',
     })
@@ -188,7 +184,6 @@ export default function Perfumes() {
     setModal('venta')
   }
 
-  // ✅ CAMBIO 2: submitVenta envía abonado al editar
   const submitVenta = async () => {
     setError('')
 
@@ -201,15 +196,8 @@ export default function Perfumes() {
 
     if (editId) {
       const res = await api.put(`/ventas/${editId}`, {
-        perfume_id: ventaForm.perfume_id,
-        cliente: ventaForm.cliente,
-        cantidad: ventaForm.cantidad,
-        precio_unitario: ventaForm.precio_unitario,
-        tipo_pago: ventaForm.tipo_pago,
-        fecha: ventaForm.fecha,
-        notas: ventaForm.notas,
+        ...ventaForm,
         total_venta: total,
-        abonado: ventaForm.abonado
       })
 
       if (res.error) {
@@ -1374,10 +1362,10 @@ export default function Perfumes() {
                     >
                       {fmt(
                         gananciaU() *
-                        (parseInt(
-                          perfumeForm.piezas_compradas,
-                          10
-                        ) || 0)
+                          (parseInt(
+                            perfumeForm.piezas_compradas,
+                            10
+                          ) || 0)
                       )}
                     </strong>
                   </div>
@@ -1613,48 +1601,48 @@ export default function Perfumes() {
 
                   {ventaForm.tipo_pago ===
                     'abonos' && (
-                      <div className="form-group">
-                        <label className="form-label">
-                          Abono inicial ($)
-                        </label>
+                    <div className="form-group">
+                      <label className="form-label">
+                        Abono inicial ($)
+                      </label>
 
-                        <input
-                          type="number"
-                          className="form-input"
-                          value={
-                            ventaForm.abonado
-                          }
-                          onChange={e =>
-                            sv(
-                              'abonado',
-                              e.target.value
-                            )
-                          }
-                          placeholder="0 si no deja nada hoy"
-                        />
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={
+                          ventaForm.abonado
+                        }
+                        onChange={e =>
+                          sv(
+                            'abonado',
+                            e.target.value
+                          )
+                        }
+                        placeholder="0 si no deja nada hoy"
+                      />
 
-                        <div
-                          style={{
-                            fontSize:
-                              '0.72rem',
-                            color:
-                              'var(--cream-dim)',
-                            marginTop: 4,
-                          }}
-                        >
-                          Resta:{' '}
-                          {fmt(
-                            Math.max(
-                              0,
-                              totalVenta() -
+                      <div
+                        style={{
+                          fontSize:
+                            '0.72rem',
+                          color:
+                            'var(--cream-dim)',
+                          marginTop: 4,
+                        }}
+                      >
+                        Resta:{' '}
+                        {fmt(
+                          Math.max(
+                            0,
+                            totalVenta() -
                               (Number(
                                 ventaForm.abonado
                               ) || 0)
-                            )
-                          )}
-                        </div>
+                          )
+                        )}
                       </div>
-                    )}
+                    </div>
+                  )}
 
                   <div className="form-group">
                     <label className="form-label">
@@ -1828,31 +1816,29 @@ export default function Perfumes() {
                   setEditAbonoId(null)
                 }}
               >
-                Cerrar
+                Cancelar
               </button>
 
-              {(modal === 'perfume' || modal === 'venta' || modal === 'abono') && (
-                <button
-                  className="btn btn-gold"
-                  onClick={() => {
-                    if (modal === 'perfume') {
-                      submitPerfume()
-                    }
+              <button
+                className="btn btn-gold"
+                onClick={() => {
+                  if (modal === 'perfume') {
+                    submitPerfume()
+                  }
 
-                    if (modal === 'venta') {
-                      submitVenta()
-                    }
+                  if (modal === 'venta') {
+                    submitVenta()
+                  }
 
-                    if (modal === 'abono') {
-                      submitAbono()
-                    }
-                  }}
-                >
-                  {editId || editAbonoId
-                    ? 'Guardar cambios'
-                    : 'Guardar'}
-                </button>
-              )}
+                  if (modal === 'abono') {
+                    submitAbono()
+                  }
+                }}
+              >
+                {editId || editAbonoId
+                  ? 'Guardar cambios'
+                  : 'Guardar'}
+              </button>
             </div>
           </div>
         </div>
