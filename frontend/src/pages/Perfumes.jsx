@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Trash2, ShoppingCart, Package, CreditCard, Pencil, Clock, Shield } from 'lucide-react'
+import { Plus, X, Trash2, ShoppingCart, Package, CreditCard, Pencil, Clock } from 'lucide-react'
 import { api, fmt, fmtDate } from '../api'
 
 const hoy = new Date().toISOString().split('T')[0]
@@ -42,12 +42,6 @@ export default function Perfumes() {
     notas: '',
   })
   const [editAbonoId, setEditAbonoId] = useState(null)
-
-  // Estados para Batch Code (verificador independiente)
-  const [batchCodeInput, setBatchCodeInput] = useState('')
-  const [batchCodeMarca, setBatchCodeMarca] = useState('')
-  const [batchCodeResult, setBatchCodeResult] = useState(null)
-  const [batchCodeLoading, setBatchCodeLoading] = useState(false)
 
   // Paginación del inventario
   const PERFUMES_POR_PAGINA = 10
@@ -122,42 +116,6 @@ export default function Perfumes() {
   const totalVenta = () =>
     (parseFloat(ventaForm.precio_unitario) || 0) *
     (parseInt(ventaForm.cantidad, 10) || 1)
-
-  // ============================================================
-  // VERIFICAR BATCH CODE (INDEPENDIENTE)
-  // ============================================================
-  const verificarBatchCode = async () => {
-    if (!batchCodeInput.trim()) {
-      setBatchCodeResult({ error: 'Escribe un código para verificar' })
-      return
-    }
-
-    if (!batchCodeMarca.trim()) {
-      setBatchCodeResult({ error: 'Escribe la marca del perfume' })
-      return
-    }
-
-    setBatchCodeLoading(true)
-    setBatchCodeResult(null)
-
-    try {
-      const res = await api.post('/verificar-batch', {
-        marca: batchCodeMarca.trim(),
-        codigo: batchCodeInput.trim()
-      })
-
-      if (res.error) {
-        setBatchCodeResult({ error: res.error })
-        return
-      }
-
-      setBatchCodeResult(res)
-    } catch (err) {
-      setBatchCodeResult({ error: 'Error al verificar: ' + err.message })
-    } finally {
-      setBatchCodeLoading(false)
-    }
-  }
 
   const openEditPerfume = (p) => {
     setError('')
@@ -351,9 +309,13 @@ export default function Perfumes() {
     load()
   }
 
+  // Ventas NO liquidadas (para la tabla principal)
   const ventasPendientes = ventas.filter(v => !v.liquidado)
+
+  // Ventas liquidadas (para el historial)
   const ventasLiquidadas = ventas.filter(v => v.liquidado)
 
+  // Filtrar ventas para el historial
   const ventasFiltradas = ventasLiquidadas.filter(v => {
     if (historialFiltro.cliente && !v.cliente?.toLowerCase().includes(historialFiltro.cliente.toLowerCase())) {
       return false
@@ -385,6 +347,7 @@ export default function Perfumes() {
     0
   )
 
+  // Paginación del inventario: 10 perfumes por página
   const totalPaginasPerfumes = Math.max(
     1,
     Math.ceil(perfumes.length / PERFUMES_POR_PAGINA)
@@ -447,21 +410,6 @@ export default function Perfumes() {
           >
             <ShoppingCart size={14} />
             Vender
-          </button>
-
-          <button
-            className="btn btn-outline"
-            onClick={() => {
-              setError('')
-              setBatchCodeInput('')
-              setBatchCodeMarca('')
-              setBatchCodeResult(null)
-              setModal('batch')
-            }}
-            style={{ borderColor: 'var(--gold)' }}
-          >
-            <Shield size={14} />
-            Verificar Batch Code
           </button>
 
           <button
@@ -772,7 +720,7 @@ export default function Perfumes() {
         )}
       </div>
 
-      {/* VENTAS PENDIENTES */}
+      {/* VENTAS - SOLO PENDIENTES (NO LIQUIDADAS) */}
       <div
         className="card"
         style={{ marginTop: 20 }}
@@ -1018,8 +966,6 @@ export default function Perfumes() {
                     : 'Registrar abono')}
 
                 {modal === 'historial' && 'Historial de ventas liquidadas'}
-
-                {modal === 'batch' && 'Verificar Batch Code'}
               </span>
 
               <button
@@ -1045,108 +991,6 @@ export default function Perfumes() {
                 >
                   {error}
                 </div>
-              )}
-
-              {modal === 'batch' && (
-                <>
-                  <div className="form-group">
-                    <label className="form-label">
-                      Marca del perfume *
-                    </label>
-                    <input
-                      className="form-input"
-                      value={batchCodeMarca}
-                      onChange={e => setBatchCodeMarca(e.target.value)}
-                      placeholder="Ej: Dior, Versace, YSL, Tom Ford..."
-                      autoFocus
-                    />
-                    <div style={{ fontSize: '0.7rem', color: 'var(--cream-dim)', marginTop: 4 }}>
-                      Tenemos reglas especiales para Dior, Coty, L'Oréal y Estée Lauder.
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">
-                      Código de lote (Batch Code) *
-                    </label>
-                    <input
-                      className="form-input"
-                      value={batchCodeInput}
-                      onChange={e => setBatchCodeInput(e.target.value)}
-                      placeholder="Ej: 4X01, 0124, S123..."
-                    />
-                    <div style={{ fontSize: '0.7rem', color: 'var(--cream-dim)', marginTop: 4 }}>
-                      Busca el código en el fondo del frasco o en la caja. Debe coincidir en ambos.
-                    </div>
-                  </div>
-
-                  <button
-                    className="btn btn-gold"
-                    onClick={verificarBatchCode}
-                    disabled={batchCodeLoading}
-                    style={{ width: '100%', marginBottom: 16 }}
-                  >
-                    {batchCodeLoading ? 'Verificando...' : 'Verificar código'}
-                  </button>
-
-                  {batchCodeResult && (
-                    <div
-                      style={{
-                        padding: 14,
-                        borderRadius: 6,
-                        background: batchCodeResult.error || batchCodeResult.valido === false
-                          ? 'rgba(196, 92, 92, 0.1)'
-                          : batchCodeResult.valido === true
-                            ? 'rgba(74, 140, 106, 0.1)'
-                            : 'rgba(201, 168, 76, 0.1)',
-                        border: `1px solid ${
-                          batchCodeResult.error || batchCodeResult.valido === false
-                            ? '#c45c5c'
-                            : batchCodeResult.valido === true
-                              ? '#4a8c6a'
-                              : '#c9a84c'
-                        }`,
-                        fontSize: '0.85rem',
-                        lineHeight: 1.6
-                      }}
-                    >
-                      {batchCodeResult.error && (
-                        <div style={{ color: '#c45c5c' }}>
-                          <strong>❌ {batchCodeResult.error}</strong>
-                        </div>
-                      )}
-
-                      {batchCodeResult.valido === true && (
-                        <div style={{ color: '#4a8c6a' }}>
-                          <strong>{batchCodeResult.mensaje}</strong>
-                          <div style={{ marginTop: 8 }}>
-                            <div><strong>Marca:</strong> {batchCodeResult.marca}</div>
-                            <div><strong>Grupo:</strong> {batchCodeResult.grupo}</div>
-                            <div><strong>Código:</strong> {batchCodeResult.codigo}</div>
-                            <div><strong>Fecha estimada:</strong> {batchCodeResult.fecha_estimada}</div>
-                          </div>
-                        </div>
-                      )}
-
-                      {batchCodeResult.valido === false && (
-                        <div style={{ color: '#c45c5c' }}>
-                          <strong>❌ {batchCodeResult.mensaje}</strong>
-                          <div style={{ marginTop: 8 }}>
-                            <div><strong>Marca:</strong> {batchCodeResult.marca}</div>
-                            {batchCodeResult.grupo && <div><strong>Grupo:</strong> {batchCodeResult.grupo}</div>}
-                            <div><strong>Código:</strong> {batchCodeResult.codigo}</div>
-                          </div>
-                        </div>
-                      )}
-
-                      {batchCodeResult.reconocido === false && (
-                        <div style={{ color: '#c9a84c' }}>
-                          <strong>⚠️ {batchCodeResult.mensaje}</strong>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
               )}
 
               {modal === 'historial' && (
@@ -1530,10 +1374,10 @@ export default function Perfumes() {
                     >
                       {fmt(
                         gananciaU() *
-                          (parseInt(
-                            perfumeForm.piezas_compradas,
-                            10
-                          ) || 0)
+                        (parseInt(
+                          perfumeForm.piezas_compradas,
+                          10
+                        ) || 0)
                       )}
                     </strong>
                   </div>
@@ -1769,48 +1613,48 @@ export default function Perfumes() {
 
                   {ventaForm.tipo_pago ===
                     'abonos' && (
-                    <div className="form-group">
-                      <label className="form-label">
-                        Abono inicial ($)
-                      </label>
+                      <div className="form-group">
+                        <label className="form-label">
+                          Abono inicial ($)
+                        </label>
 
-                      <input
-                        type="number"
-                        className="form-input"
-                        value={
-                          ventaForm.abonado
-                        }
-                        onChange={e =>
-                          sv(
-                            'abonado',
-                            e.target.value
-                          )
-                        }
-                        placeholder="0 si no deja nada hoy"
-                      />
+                        <input
+                          type="number"
+                          className="form-input"
+                          value={
+                            ventaForm.abonado
+                          }
+                          onChange={e =>
+                            sv(
+                              'abonado',
+                              e.target.value
+                            )
+                          }
+                          placeholder="0 si no deja nada hoy"
+                        />
 
-                      <div
-                        style={{
-                          fontSize:
-                            '0.72rem',
-                          color:
-                            'var(--cream-dim)',
-                          marginTop: 4,
-                        }}
-                      >
-                        Resta:{' '}
-                        {fmt(
-                          Math.max(
-                            0,
-                            totalVenta() -
+                        <div
+                          style={{
+                            fontSize:
+                              '0.72rem',
+                            color:
+                              'var(--cream-dim)',
+                            marginTop: 4,
+                          }}
+                        >
+                          Resta:{' '}
+                          {fmt(
+                            Math.max(
+                              0,
+                              totalVenta() -
                               (Number(
                                 ventaForm.abonado
                               ) || 0)
-                          )
-                        )}
+                            )
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
                   <div className="form-group">
                     <label className="form-label">
