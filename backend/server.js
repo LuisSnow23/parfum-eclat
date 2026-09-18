@@ -9,23 +9,35 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const SECRET_KEY = process.env.JWT_SECRET || 'tu_secreto_super_seguro_cambia_esto_en_produccion';
+const SECRET_KEY =
+  process.env.JWT_SECRET ||
+  'tu_secreto_super_seguro_cambia_esto_en_produccion';
 
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+app.use(
+  cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
+
 app.use(express.json());
 
 // ============================================================
 // CONEXION A SUPABASE
 // ============================================================
 const supabaseUrl = 'https://rvnxajnpcszyzxlxamml.supabase.co';
-const supabaseKey = process.env.SUPABASE_KEY || 'sb_publishable_iXc0eIJjHPRxS1IRhTOg-Q_nwgpzEMr';
+const supabaseKey =
+  process.env.SUPABASE_KEY ||
+  'sb_publishable_iXc0eIJjHPRxS1IRhTOg-Q_nwgpzEMr';
+
 const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: { autoRefreshToken: false, persistSession: false }
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
 });
+
 console.log('Conectado a Supabase');
 
 // ============================================================
@@ -34,19 +46,31 @@ console.log('Conectado a Supabase');
 async function crearAdminSupabase() {
   const defaultPass = 'Chichicuilote1*';
   const hash = bcrypt.hashSync(defaultPass, 10);
+
   console.log('Verificando usuario admin...');
 
   const { data: existing } = await supabase
-    .from('usuarios').select('id').eq('username', 'admin').maybeSingle();
+    .from('usuarios')
+    .select('id')
+    .eq('username', 'admin')
+    .maybeSingle();
 
   if (existing) {
-    await supabase.from('usuarios').update({ password_hash: hash }).eq('username', 'admin');
+    await supabase
+      .from('usuarios')
+      .update({
+        password_hash: hash,
+      })
+      .eq('username', 'admin');
+
     console.log('Admin actualizado.');
     return;
   }
 
-  const { error } = await supabase
-    .from('usuarios').insert({ username: 'admin', password_hash: hash });
+  const { error } = await supabase.from('usuarios').insert({
+    username: 'admin',
+    password_hash: hash,
+  });
 
   if (error) {
     console.log('Error creando admin:', error.message);
@@ -54,6 +78,7 @@ async function crearAdminSupabase() {
     console.log('Admin creado. Contrasena:', defaultPass);
   }
 }
+
 crearAdminSupabase();
 
 // ============================================================
@@ -61,14 +86,29 @@ crearAdminSupabase();
 // ============================================================
 function envioUnitario(p) {
   const envio = Number(p.costo_envio) || 0;
-  const n = Math.max(Number(p.piezas_envio) || Number(p.piezas_compradas) || 1, 1);
+
+  const n = Math.max(
+    Number(p.piezas_envio) ||
+      Number(p.piezas_compradas) ||
+      1,
+    1
+  );
+
   return envio / n;
 }
+
 function costoUnitario(p) {
-  return (Number(p.precio_proveedor) || 0) + envioUnitario(p);
+  return (
+    (Number(p.precio_proveedor) || 0) +
+    envioUnitario(p)
+  );
 }
+
 function gananciaUnitaria(p) {
-  return (Number(p.precio_publico) || 0) - costoUnitario(p);
+  return (
+    (Number(p.precio_publico) || 0) -
+    costoUnitario(p)
+  );
 }
 
 // ============================================================
@@ -76,6 +116,7 @@ function gananciaUnitaria(p) {
 // ============================================================
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
+
   const { data: user, error } = await supabase
     .from('usuarios')
     .select('id, username, password_hash')
@@ -83,17 +124,32 @@ app.post('/api/login', async (req, res) => {
     .single();
 
   if (error || !user) {
-    return res.status(401).json({ error: 'Usuario o contrasena incorrectos' });
+    return res.status(401).json({
+      error: 'Usuario o contrasena incorrectos',
+    });
   }
+
   if (!bcrypt.compareSync(password, user.password_hash)) {
-    return res.status(401).json({ error: 'Usuario o contrasena incorrectos' });
+    return res.status(401).json({
+      error: 'Usuario o contrasena incorrectos',
+    });
   }
+
   const token = jwt.sign(
-    { id: user.id, username: user.username },
+    {
+      id: user.id,
+      username: user.username,
+    },
     SECRET_KEY,
-    { expiresIn: '7d' }
+    {
+      expiresIn: '7d',
+    }
   );
-  res.json({ token, username: user.username });
+
+  res.json({
+    token,
+    username: user.username,
+  });
 });
 
 // ============================================================
@@ -101,14 +157,24 @@ app.post('/api/login', async (req, res) => {
 // ============================================================
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-  if (!token) return res.sendStatus(401);
+
+  const token =
+    authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.sendStatus(401);
+  }
+
   jwt.verify(token, SECRET_KEY, (err, user) => {
-    if (err) return res.sendStatus(403);
+    if (err) {
+      return res.sendStatus(403);
+    }
+
     req.user = user;
     next();
   });
 }
+
 app.use('/api', authenticateToken);
 
 // ============================================================
@@ -116,47 +182,79 @@ app.use('/api', authenticateToken);
 // ============================================================
 app.get('/api/resumen', async (req, res) => {
   try {
-    const { data: perfumes } = await supabase.from('perfumes').select('*');
-    const { data: ventas } = await supabase.from('ventas').select('*');
-    const { data: abonos } = await supabase.from('abonos').select('*');
-    const { data: fondoMovimientos } = await supabase.from('fondo_movimientos').select('*');
+    const { data: perfumes } = await supabase
+      .from('perfumes')
+      .select('*');
+
+    const { data: ventas } = await supabase
+      .from('ventas')
+      .select('*');
+
+    const { data: abonos } = await supabase
+      .from('abonos')
+      .select('*');
+
+    const { data: fondoMovimientos } =
+      await supabase
+        .from('fondo_movimientos')
+        .select('*');
 
     const P = perfumes || [];
     const V = ventas || [];
 
     const vendidasPorPerfume = {};
+
     V.forEach(v => {
       if (v.perfume_id) {
         vendidasPorPerfume[v.perfume_id] =
-          (vendidasPorPerfume[v.perfume_id] || 0) + (Number(v.cantidad) || 0);
+          (vendidasPorPerfume[v.perfume_id] || 0) +
+          (Number(v.cantidad) || 0);
       }
     });
 
     const abonosPorVenta = {};
+
     (abonos || []).forEach(a => {
       if (a.venta_id) {
-        abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
+        abonosPorVenta[a.venta_id] =
+          (abonosPorVenta[a.venta_id] || 0) +
+          Number(a.monto);
       }
     });
 
-    // ✅ Suma: ventas.abonado + abonos adicionales
     let totalCobradoVentas = 0;
+
     V.forEach(v => {
-      const abonadoInicial = Number(v.abonado) || 0;
-      const abonosExtra = abonosPorVenta[v.id] || 0;
-      totalCobradoVentas += abonadoInicial + abonosExtra;
+      const abonadoInicial =
+        Number(v.abonado) || 0;
+
+      const abonosExtra =
+        abonosPorVenta[v.id] || 0;
+
+      totalCobradoVentas +=
+        abonadoInicial + abonosExtra;
     });
 
-    const totalRetiradoFondo = (fondoMovimientos || [])
-      .filter(m => m.tipo === 'retiro')
-      .reduce((sum, m) => sum + Number(m.monto), 0);
+    const totalRetiradoFondo =
+      (fondoMovimientos || [])
+        .filter(m => m.tipo === 'retiro')
+        .reduce(
+          (sum, m) => sum + Number(m.monto),
+          0
+        );
 
-    const totalIngresadoFondo = (fondoMovimientos || [])
-      .filter(m => m.tipo === 'ingreso')
-      .reduce((sum, m) => sum + Number(m.monto), 0);
+    const totalIngresadoFondo =
+      (fondoMovimientos || [])
+        .filter(m => m.tipo === 'ingreso')
+        .reduce(
+          (sum, m) => sum + Number(m.monto),
+          0
+        );
 
     const dinero_en_caja = Math.max(
-      totalCobradoVentas + totalIngresadoFondo - totalRetiradoFondo,
+      totalCobradoVentas +
+        totalIngresadoFondo -
+        totalRetiradoFondo,
       0
     );
 
@@ -168,34 +266,68 @@ app.get('/api/resumen', async (req, res) => {
 
     P.forEach(p => {
       const cu = costoUnitario(p);
-      const compradas = Number(p.piezas_compradas) || 0;
-      const vendidas = vendidasPorPerfume[p.id] || 0;
-      const stk = Math.max(compradas - vendidas, 0);
+
+      const compradas =
+        Number(p.piezas_compradas) || 0;
+
+      const vendidas =
+        vendidasPorPerfume[p.id] || 0;
+
+      const stk = Math.max(
+        compradas - vendidas,
+        0
+      );
 
       stock += stk;
       capital_en_inventario += cu * stk;
       capital_invertido += cu * compradas;
-      valor_stock_publico += (Number(p.precio_publico) || 0) * stk;
+
+      valor_stock_publico +=
+        (Number(p.precio_publico) || 0) *
+        stk;
     });
 
     V.forEach(v => {
-      const total = Number(v.total_venta) || 0;
-      const abonadoInicial = Number(v.abonado) || 0;
-      const abonosExtra = abonosPorVenta[v.id] || 0;
-      const abonadoTotal = abonadoInicial + abonosExtra;
-      por_cobrar += Math.max(total - abonadoTotal, 0);
+      const total =
+        Number(v.total_venta) || 0;
+
+      const abonadoInicial =
+        Number(v.abonado) || 0;
+
+      const abonosExtra =
+        abonosPorVenta[v.id] || 0;
+
+      const abonadoTotal =
+        abonadoInicial + abonosExtra;
+
+      por_cobrar += Math.max(
+        total - abonadoTotal,
+        0
+      );
     });
 
     let costo_de_lo_vendido = 0;
+
     P.forEach(p => {
       const cu = costoUnitario(p);
-      const vendidas = vendidasPorPerfume[p.id] || 0;
-      costo_de_lo_vendido += cu * vendidas;
-    });
-    const ganancia_realizada = totalCobradoVentas - costo_de_lo_vendido;
 
-    const total_a_cobrar = dinero_en_caja + por_cobrar;
-    const valor_potencial_total = total_a_cobrar + valor_stock_publico;
+      const vendidas =
+        vendidasPorPerfume[p.id] || 0;
+
+      costo_de_lo_vendido +=
+        cu * vendidas;
+    });
+
+    const ganancia_realizada =
+      totalCobradoVentas -
+      costo_de_lo_vendido;
+
+    const total_a_cobrar =
+      dinero_en_caja + por_cobrar;
+
+    const valor_potencial_total =
+      total_a_cobrar +
+      valor_stock_publico;
 
     res.json({
       dinero_en_caja,
@@ -206,469 +338,1145 @@ app.get('/api/resumen', async (req, res) => {
       capital_invertido,
       stock,
       valor_stock_publico,
-      valor_potencial_total
+      valor_potencial_total,
     });
   } catch (error) {
-    console.error('Error en /api/resumen:', error);
-    res.status(500).json({ error: error.message });
+    console.error(
+      'Error en /api/resumen:',
+      error
+    );
+
+    res.status(500).json({
+      error: error.message,
+    });
   }
 });
 
 // ============================================================
-// PERFUMES (GET, POST, PUT, DELETE)
+// PERFUMES
 // ============================================================
 app.get('/api/perfumes', async (req, res) => {
   const { data, error } = await supabase
-    .from('perfumes').select('*').order('creado_en', { ascending: false });
-  if (error) return res.status(400).json({ error: error.message });
+    .from('perfumes')
+    .select('*')
+    .order('creado_en', {
+      ascending: false,
+    });
 
-  const { data: ventas } = await supabase.from('ventas').select('*');
+  if (error) {
+    return res.status(400).json({
+      error: error.message,
+    });
+  }
+
+  const { data: ventas } = await supabase
+    .from('ventas')
+    .select('*');
+
   const vendPor = {};
   const cobPor = {};
   const pcPor = {};
 
   (ventas || []).forEach(v => {
-    if (!v.perfume_id) return;
-    const pid = v.perfume_id;
-    const cantidad = Number(v.cantidad) || 0;
-    const abonado = Number(v.abonado) || 0;
-    const total = Number(v.total_venta) || 0;
+    if (!v.perfume_id) {
+      return;
+    }
 
-    vendPor[pid] = (vendPor[pid] || 0) + cantidad;
-    cobPor[pid] = (cobPor[pid] || 0) + abonado;
-    pcPor[pid] = (pcPor[pid] || 0) + Math.max(total - abonado, 0);
+    const pid = v.perfume_id;
+
+    const cantidad =
+      Number(v.cantidad) || 0;
+
+    const abonado =
+      Number(v.abonado) || 0;
+
+    const total =
+      Number(v.total_venta) || 0;
+
+    vendPor[pid] =
+      (vendPor[pid] || 0) +
+      cantidad;
+
+    cobPor[pid] =
+      (cobPor[pid] || 0) +
+      abonado;
+
+    pcPor[pid] =
+      (pcPor[pid] || 0) +
+      Math.max(total - abonado, 0);
   });
 
   const resultado = data.map(p => ({
     ...p,
-    vendidos: vendPor[p.id] || 0,
-    stock: Math.max((Number(p.piezas_compradas) || 0) - (vendPor[p.id] || 0), 0),
-    envio_unitario: envioUnitario(p),
-    costo_unitario: costoUnitario(p),
-    ganancia_unitaria: gananciaUnitaria(p),
-    cobrado: cobPor[p.id] || 0,
-    por_cobrar: pcPor[p.id] || 0
+
+    vendidos:
+      vendPor[p.id] || 0,
+
+    stock: Math.max(
+      (Number(p.piezas_compradas) || 0) -
+        (vendPor[p.id] || 0),
+      0
+    ),
+
+    envio_unitario:
+      envioUnitario(p),
+
+    costo_unitario:
+      costoUnitario(p),
+
+    ganancia_unitaria:
+      gananciaUnitaria(p),
+
+    cobrado:
+      cobPor[p.id] || 0,
+
+    por_cobrar:
+      pcPor[p.id] || 0,
   }));
+
   res.json(resultado);
 });
 
 app.post('/api/perfumes', async (req, res) => {
   const {
-    nombre, proveedor, precio_proveedor, precio_publico,
-    piezas_compradas, costo_envio, piezas_envio, notas
+    nombre,
+    proveedor,
+    precio_proveedor,
+    precio_publico,
+    piezas_compradas,
+    costo_envio,
+    piezas_envio,
+    notas,
   } = req.body;
 
-  if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
+  if (!nombre) {
+    return res.status(400).json({
+      error: 'Nombre requerido',
+    });
+  }
 
-  const { data, error } = await supabase.from('perfumes').insert({
-    nombre, proveedor,
-    precio_proveedor: Number(precio_proveedor) || 0,
-    precio_publico: Number(precio_publico) || 0,
-    piezas_compradas: Number(piezas_compradas) || 1,
-    costo_envio: Number(costo_envio) || 0,
-    piezas_envio: Number(piezas_envio) || 1,
-    notas
-  }).select();
+  const { data, error } =
+    await supabase
+      .from('perfumes')
+      .insert({
+        nombre,
+        proveedor,
 
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ id: data[0].id });
+        precio_proveedor:
+          Number(precio_proveedor) || 0,
+
+        precio_publico:
+          Number(precio_publico) || 0,
+
+        piezas_compradas:
+          Number(piezas_compradas) || 1,
+
+        costo_envio:
+          Number(costo_envio) || 0,
+
+        piezas_envio:
+          Number(piezas_envio) || 1,
+
+        notas,
+      })
+      .select();
+
+  if (error) {
+    return res.status(400).json({
+      error: error.message,
+    });
+  }
+
+  res.json({
+    id: data[0].id,
+  });
 });
 
 app.put('/api/perfumes/:id', async (req, res) => {
   const { id } = req.params;
+
   const {
-    nombre, proveedor, precio_proveedor, precio_publico,
-    piezas_compradas, costo_envio, piezas_envio, notas
+    nombre,
+    proveedor,
+    precio_proveedor,
+    precio_publico,
+    piezas_compradas,
+    costo_envio,
+    piezas_envio,
+    notas,
   } = req.body;
 
-  const { data, error } = await supabase.from('perfumes').update({
-    nombre, proveedor,
-    precio_proveedor: Number(precio_proveedor) || 0,
-    precio_publico: Number(precio_publico) || 0,
-    piezas_compradas: Number(piezas_compradas) || 1,
-    costo_envio: Number(costo_envio) || 0,
-    piezas_envio: Number(piezas_envio) || 1,
-    notas
-  }).eq('id', id).select();
+  const { data, error } =
+    await supabase
+      .from('perfumes')
+      .update({
+        nombre,
+        proveedor,
 
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ id: data[0].id });
+        precio_proveedor:
+          Number(precio_proveedor) || 0,
+
+        precio_publico:
+          Number(precio_publico) || 0,
+
+        piezas_compradas:
+          Number(piezas_compradas) || 1,
+
+        costo_envio:
+          Number(costo_envio) || 0,
+
+        piezas_envio:
+          Number(piezas_envio) || 1,
+
+        notas,
+      })
+      .eq('id', id)
+      .select();
+
+  if (error) {
+    return res.status(400).json({
+      error: error.message,
+    });
+  }
+
+  res.json({
+    id: data[0].id,
+  });
 });
 
-app.delete('/api/perfumes/:id', async (req, res) => {
-  const { id } = req.params;
-  const { error } = await supabase.from('perfumes').delete().eq('id', id);
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ ok: true });
-});
+app.delete(
+  '/api/perfumes/:id',
+  async (req, res) => {
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('perfumes')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      return res.status(400).json({
+        error: error.message,
+      });
+    }
+
+    res.json({
+      ok: true,
+    });
+  }
+);
 
 // ============================================================
-// VENTAS (GET, POST, PUT, DELETE)
+// VENTAS
 // ============================================================
 app.get('/api/ventas', async (req, res) => {
   const { data, error } = await supabase
     .from('ventas')
-    .select('*, perfumes(nombre, proveedor), abonos(*)')
-    .order('fecha', { ascending: false });
+    .select(
+      '*, perfumes(nombre, proveedor), abonos(*)'
+    )
+    .order('fecha', {
+      ascending: false,
+    });
 
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) {
+    return res.status(400).json({
+      error: error.message,
+    });
+  }
 
-  const resultado = (data || []).map(v => {
-    const total = Number(v.total_venta) || 0;
+  const resultado =
+    (data || []).map(v => {
+      const total =
+        Number(v.total_venta) || 0;
 
-    // ✅ Suma: ventas.abonado + abonos adicionales
-    const abonoInicial = Number(v.abonado) || 0;
-    const abonosExtra = (v.abonos || []).reduce(
-      (s, a) => s + (Number(a.monto) || 0), 0
-    );
-    const abonado = abonoInicial + abonosExtra;
+      const abonoInicial =
+        Number(v.abonado) || 0;
 
-    const resto = Math.max(total - abonado, 0);
-    const pct_pagado = total > 0 ? Math.round((abonado / total) * 100) : 0;
-    const liquidado = resto <= 0 && total > 0;
+      const abonosExtra =
+        (v.abonos || []).reduce(
+          (s, a) =>
+            s + (Number(a.monto) || 0),
+          0
+        );
 
-    return {
-      ...v,
-      abonos: v.abonos || [],
-      abonado,
-      perfume_nombre: v.perfumes?.nombre || '-',
-      resto,
-      liquidado,
-      pct_pagado
-    };
-  });
+      const abonadoTotal =
+        abonoInicial + abonosExtra;
+
+      const resto = Math.max(
+        total - abonadoTotal,
+        0
+      );
+
+      const pct_pagado =
+        total > 0
+          ? Math.round(
+              (abonadoTotal / total) *
+                100
+            )
+          : 0;
+
+      const liquidado =
+        resto <= 0 && total > 0;
+
+      return {
+        ...v,
+
+        abonos:
+          v.abonos || [],
+
+        abonado_inicial:
+          abonoInicial,
+
+        abonado:
+          abonadoTotal,
+
+        perfume_nombre:
+          v.perfumes?.nombre || '-',
+
+        resto,
+        liquidado,
+        pct_pagado,
+      };
+    });
 
   res.json(resultado);
 });
 
 app.post('/api/ventas', async (req, res) => {
   const {
-    perfume_id, cliente, cantidad, precio_unitario,
-    total_venta, tipo_pago, abonado, fecha, notas
+    perfume_id,
+    cliente,
+    cantidad,
+    precio_unitario,
+    total_venta,
+    tipo_pago,
+    abonado,
+    fecha,
+    notas,
   } = req.body;
 
   if (!perfume_id || !fecha) {
-    return res.status(400).json({ error: 'Perfume y fecha requeridos' });
+    return res.status(400).json({
+      error:
+        'Perfume y fecha requeridos',
+    });
   }
 
-  const { data, error } = await supabase.from('ventas').insert({
-    perfume_id,
-    cliente,
-    cantidad: Number(cantidad) || 1,
-    precio_unitario: Number(precio_unitario) || 0,
-    total_venta: Number(total_venta) || 0,
-    tipo_pago,
-    abonado: Number(abonado) || 0,
-    fecha,
-    notas
-  }).select();
+  const { data, error } =
+    await supabase
+      .from('ventas')
+      .insert({
+        perfume_id,
+        cliente,
 
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ id: data[0].id });
+        cantidad:
+          Number(cantidad) || 1,
+
+        precio_unitario:
+          Number(precio_unitario) || 0,
+
+        total_venta:
+          Number(total_venta) || 0,
+
+        tipo_pago,
+
+        abonado:
+          Number(abonado) || 0,
+
+        fecha,
+        notas,
+      })
+      .select();
+
+  if (error) {
+    return res.status(400).json({
+      error: error.message,
+    });
+  }
+
+  res.json({
+    id: data[0].id,
+  });
 });
 
 app.put('/api/ventas/:id', async (req, res) => {
   const { id } = req.params;
-  const {
-    perfume_id, cliente, cantidad, precio_unitario,
-    total_venta, tipo_pago, abonado, fecha, notas
-  } = req.body;
 
-  const { data, error } = await supabase.from('ventas').update({
+  const {
     perfume_id,
     cliente,
-    cantidad: Number(cantidad) || 1,
-    precio_unitario: Number(precio_unitario) || 0,
-    total_venta: Number(total_venta) || 0,
+    cantidad,
+    precio_unitario,
+    total_venta,
     tipo_pago,
-    abonado: Number(abonado) || 0,
+    abonado,
     fecha,
-    notas
-  }).eq('id', id).select();
+    notas,
+  } = req.body;
 
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ id: data[0].id });
-});
+  const { data, error } =
+    await supabase
+      .from('ventas')
+      .update({
+        perfume_id,
+        cliente,
 
-app.delete('/api/ventas/:id', async (req, res) => {
-  const { id } = req.params;
-  const { error } = await supabase.from('ventas').delete().eq('id', id);
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ ok: true });
-});
+        cantidad:
+          Number(cantidad) || 1,
 
-// ============================================================
-// ABONOS (POST, PUT, DELETE)
-// ============================================================
-app.post('/api/ventas/:id/abonos', async (req, res) => {
-  const venta_id = Number(req.params.id);
-  const { monto, fecha, notas } = req.body;
+        precio_unitario:
+          Number(precio_unitario) || 0,
 
-  if (!monto || Number(monto) <= 0) {
-    return res.status(400).json({ error: 'Monto invalido' });
+        total_venta:
+          Number(total_venta) || 0,
+
+        tipo_pago,
+
+        abonado:
+          Number(abonado) || 0,
+
+        fecha,
+        notas,
+      })
+      .eq('id', id)
+      .select();
+
+  if (error) {
+    return res.status(400).json({
+      error: error.message,
+    });
   }
-  if (!fecha) return res.status(400).json({ error: 'Fecha requerida' });
 
-  const { data, error } = await supabase.from('abonos').insert({
-    venta_id,
-    monto: Number(monto),
-    fecha,
-    notas
-  }).select();
-
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ id: data[0].id });
+  res.json({
+    id: data[0].id,
+  });
 });
+
+app.delete(
+  '/api/ventas/:id',
+  async (req, res) => {
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('ventas')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      return res.status(400).json({
+        error: error.message,
+      });
+    }
+
+    res.json({
+      ok: true,
+    });
+  }
+);
+
+// ============================================================
+// ABONOS
+// ============================================================
+app.post(
+  '/api/ventas/:id/abonos',
+  async (req, res) => {
+    const venta_id =
+      Number(req.params.id);
+
+    const {
+      monto,
+      fecha,
+      notas,
+    } = req.body;
+
+    if (
+      !monto ||
+      Number(monto) <= 0
+    ) {
+      return res.status(400).json({
+        error: 'Monto invalido',
+      });
+    }
+
+    if (!fecha) {
+      return res.status(400).json({
+        error: 'Fecha requerida',
+      });
+    }
+
+    const { data, error } =
+      await supabase
+        .from('abonos')
+        .insert({
+          venta_id,
+          monto: Number(monto),
+          fecha,
+          notas,
+        })
+        .select();
+
+    if (error) {
+      return res.status(400).json({
+        error: error.message,
+      });
+    }
+
+    res.json({
+      id: data[0].id,
+    });
+  }
+);
 
 app.put('/api/abonos/:id', async (req, res) => {
   const { id } = req.params;
-  const { monto, fecha, notas } = req.body;
 
-  if (!monto || Number(monto) <= 0) {
-    return res.status(400).json({ error: 'Monto invalido' });
-  }
-  if (!fecha) return res.status(400).json({ error: 'Fecha requerida' });
-
-  const { data, error } = await supabase.from('abonos').update({
-    monto: Number(monto),
+  const {
+    monto,
     fecha,
-    notas
-  }).eq('id', id).select();
+    notas,
+  } = req.body;
 
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ id: data[0].id });
-});
-
-app.delete('/api/abonos/:id', async (req, res) => {
-  const { id } = req.params;
-  const { error } = await supabase.from('abonos').delete().eq('id', id);
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ ok: true });
-});
-
-// ============================================================
-// FONDO DE SOCIOS (GET, POST, PUT, DELETE)
-// ============================================================
-app.get('/api/fondo/movimientos', async (req, res) => {
-  const { data, error } = await supabase
-    .from('fondo_movimientos').select('*').order('fecha', { ascending: false });
-  if (error) return res.status(400).json({ error: error.message });
-  res.json(data);
-});
-
-app.post('/api/fondo/movimientos', async (req, res) => {
-  const { concepto, monto, tipo, fecha, notas } = req.body;
-  if (!concepto || !monto || !fecha) {
-    return res.status(400).json({ error: 'Concepto, monto y fecha son obligatorios' });
+  if (
+    !monto ||
+    Number(monto) <= 0
+  ) {
+    return res.status(400).json({
+      error: 'Monto invalido',
+    });
   }
 
-  if (tipo === 'retiro') {
-    const { data: ventas } = await supabase.from('ventas').select('*');
-    const { data: abonos } = await supabase.from('abonos').select('*');
-    const { data: fondoMovs } = await supabase.from('fondo_movimientos').select('*');
-
-    const abonosPorVenta = {};
-    (abonos || []).forEach(a => {
-      if (a.venta_id) {
-        abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
-      }
+  if (!fecha) {
+    return res.status(400).json({
+      error: 'Fecha requerida',
     });
+  }
 
-    let totalCobrado = 0;
-    (ventas || []).forEach(v => {
-      const abonadoInicial = Number(v.abonado) || 0;
-      const abonosExtra = abonosPorVenta[v.id] || 0;
-      totalCobrado += abonadoInicial + abonosExtra;
+  const { data, error } =
+    await supabase
+      .from('abonos')
+      .update({
+        monto: Number(monto),
+        fecha,
+        notas,
+      })
+      .eq('id', id)
+      .select();
+
+  if (error) {
+    return res.status(400).json({
+      error: error.message,
     });
+  }
 
-    const totalRetirado = (fondoMovs || [])
-      .filter(m => m.tipo === 'retiro')
-      .reduce((sum, m) => sum + Number(m.monto), 0);
+  res.json({
+    id: data[0].id,
+  });
+});
 
-    const totalIngresado = (fondoMovs || [])
-      .filter(m => m.tipo === 'ingreso')
-      .reduce((sum, m) => sum + Number(m.monto), 0);
+app.delete(
+  '/api/abonos/:id',
+  async (req, res) => {
+    const { id } = req.params;
 
-    const disponible = totalCobrado + totalIngresado - totalRetirado;
+    const { error } = await supabase
+      .from('abonos')
+      .delete()
+      .eq('id', id);
 
-    if (Number(monto) > disponible) {
+    if (error) {
       return res.status(400).json({
-        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}`
+        error: error.message,
       });
     }
-  }
 
-  const { data, error } = await supabase.from('fondo_movimientos').insert({
-    concepto,
-    monto: Number(monto),
-    tipo,
-    fecha,
-    notas
-  }).select();
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ id: data[0].id });
-});
-
-app.put('/api/fondo/movimientos/:id', async (req, res) => {
-  const { id } = req.params;
-  const { concepto, monto, tipo, fecha, notas } = req.body;
-  if (!concepto || !monto || !fecha) {
-    return res.status(400).json({ error: 'Concepto, monto y fecha son obligatorios' });
-  }
-
-  const { data: original } = await supabase
-    .from('fondo_movimientos')
-    .select('*')
-    .eq('id', id)
-    .single();
-
-  if (original && original.tipo === 'retiro' && tipo === 'retiro') {
-    const { data: ventas } = await supabase.from('ventas').select('*');
-    const { data: abonos } = await supabase.from('abonos').select('*');
-    const { data: fondoMovs } = await supabase.from('fondo_movimientos').select('*');
-
-    const abonosPorVenta = {};
-    (abonos || []).forEach(a => {
-      if (a.venta_id) {
-        abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
-      }
+    res.json({
+      ok: true,
     });
+  }
+);
 
-    let totalCobrado = 0;
-    (ventas || []).forEach(v => {
-      const abonadoInicial = Number(v.abonado) || 0;
-      const abonosExtra = abonosPorVenta[v.id] || 0;
-      totalCobrado += abonadoInicial + abonosExtra;
-    });
+// ============================================================
+// FONDO DE SOCIOS
+// ============================================================
+app.get(
+  '/api/fondo/movimientos',
+  async (req, res) => {
+    const { data, error } =
+      await supabase
+        .from('fondo_movimientos')
+        .select('*')
+        .order('fecha', {
+          ascending: false,
+        });
 
-    const totalRetirado = (fondoMovs || [])
-      .filter(m => m.tipo === 'retiro' && m.id !== parseInt(id))
-      .reduce((sum, m) => sum + Number(m.monto), 0);
-
-    const totalIngresado = (fondoMovs || [])
-      .filter(m => m.tipo === 'ingreso')
-      .reduce((sum, m) => sum + Number(m.monto), 0);
-
-    const disponible = totalCobrado + totalIngresado - totalRetirado;
-
-    if (Number(monto) > disponible) {
+    if (error) {
       return res.status(400).json({
-        error: `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(2)}`
+        error: error.message,
       });
     }
+
+    res.json(data);
   }
+);
 
-  const { data, error } = await supabase.from('fondo_movimientos').update({
-    concepto,
-    monto: Number(monto),
-    tipo,
-    fecha,
-    notas
-  }).eq('id', id).select();
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ id: data[0].id });
-});
+app.post(
+  '/api/fondo/movimientos',
+  async (req, res) => {
+    const {
+      concepto,
+      monto,
+      tipo,
+      fecha,
+      notas,
+    } = req.body;
 
-app.delete('/api/fondo/movimientos/:id', async (req, res) => {
-  const { id } = req.params;
-  const { error } = await supabase.from('fondo_movimientos').delete().eq('id', id);
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ ok: true });
-});
+    if (
+      !concepto ||
+      !monto ||
+      !fecha
+    ) {
+      return res.status(400).json({
+        error:
+          'Concepto, monto y fecha son obligatorios',
+      });
+    }
 
-// ============================================================
-// AHORRO CONFIG (GET, POST/UPSERT)
-// ============================================================
-app.get('/api/ahorro/config', async (req, res) => {
-  const { data, error } = await supabase
-    .from('ahorro_config').select('*').eq('id', 1).maybeSingle();
-  if (error) return res.status(400).json({ error: error.message });
-  if (!data) return res.status(404).json({ error: 'No configurado' });
-  res.json(data);
-});
+    if (tipo === 'retiro') {
+      const { data: ventas } =
+        await supabase
+          .from('ventas')
+          .select('*');
 
-app.post('/api/ahorro/config', async (req, res) => {
-  const { meta, descripcion } = req.body;
-  if (!meta) return res.status(400).json({ error: 'Meta requerida' });
+      const { data: abonos } =
+        await supabase
+          .from('abonos')
+          .select('*');
 
-  const { data, error } = await supabase.from('ahorro_config').upsert({
-    id: 1,
-    meta: Number(meta),
-    descripcion
-  }).select();
+      const { data: fondoMovs } =
+        await supabase
+          .from('fondo_movimientos')
+          .select('*');
 
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ ok: true });
-});
+      const abonosPorVenta = {};
 
-// ============================================================
-// AHORRO MOVIMIENTOS (GET, POST, PUT, DELETE)
-// ============================================================
-app.get('/api/ahorro/movimientos', async (req, res) => {
-  const { data, error } = await supabase
-    .from('ahorro_movimientos').select('*').order('fecha', { ascending: false });
-  if (error) return res.status(400).json({ error: error.message });
-  res.json(data);
-});
+      (abonos || []).forEach(a => {
+        if (a.venta_id) {
+          abonosPorVenta[a.venta_id] =
+            (abonosPorVenta[
+              a.venta_id
+            ] || 0) +
+            Number(a.monto);
+        }
+      });
 
-app.post('/api/ahorro/movimientos', async (req, res) => {
-  const { tipo, monto, descripcion, fecha } = req.body;
-  if (!tipo || !monto || !fecha) {
-    return res.status(400).json({ error: 'Tipo, monto y fecha requeridos' });
+      let totalCobrado = 0;
+
+      (ventas || []).forEach(v => {
+        const abonadoInicial =
+          Number(v.abonado) || 0;
+
+        const abonosExtra =
+          abonosPorVenta[v.id] || 0;
+
+        totalCobrado +=
+          abonadoInicial +
+          abonosExtra;
+      });
+
+      const totalRetirado =
+        (fondoMovs || [])
+          .filter(
+            m => m.tipo === 'retiro'
+          )
+          .reduce(
+            (sum, m) =>
+              sum + Number(m.monto),
+            0
+          );
+
+      const totalIngresado =
+        (fondoMovs || [])
+          .filter(
+            m => m.tipo === 'ingreso'
+          )
+          .reduce(
+            (sum, m) =>
+              sum + Number(m.monto),
+            0
+          );
+
+      const disponible =
+        totalCobrado +
+        totalIngresado -
+        totalRetirado;
+
+      if (
+        Number(monto) >
+        disponible
+      ) {
+        return res.status(400).json({
+          error:
+            `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(
+              2
+            )}`,
+        });
+      }
+    }
+
+    const { data, error } =
+      await supabase
+        .from('fondo_movimientos')
+        .insert({
+          concepto,
+          monto: Number(monto),
+          tipo,
+          fecha,
+          notas,
+        })
+        .select();
+
+    if (error) {
+      return res.status(400).json({
+        error: error.message,
+      });
+    }
+
+    res.json({
+      id: data[0].id,
+    });
   }
-  const { data, error } = await supabase.from('ahorro_movimientos').insert({
-    tipo,
-    monto: Number(monto),
-    descripcion,
-    fecha
-  }).select();
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ id: data[0].id });
-});
+);
 
-app.put('/api/ahorro/movimientos/:id', async (req, res) => {
-  const { id } = req.params;
-  const { tipo, monto, descripcion, fecha } = req.body;
-  if (!tipo || !monto || !fecha) {
-    return res.status(400).json({ error: 'Tipo, monto y fecha requeridos' });
+app.put(
+  '/api/fondo/movimientos/:id',
+  async (req, res) => {
+    const { id } = req.params;
+
+    const {
+      concepto,
+      monto,
+      tipo,
+      fecha,
+      notas,
+    } = req.body;
+
+    if (
+      !concepto ||
+      !monto ||
+      !fecha
+    ) {
+      return res.status(400).json({
+        error:
+          'Concepto, monto y fecha son obligatorios',
+      });
+    }
+
+    const { data: original } =
+      await supabase
+        .from('fondo_movimientos')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+    if (
+      original &&
+      original.tipo === 'retiro' &&
+      tipo === 'retiro'
+    ) {
+      const { data: ventas } =
+        await supabase
+          .from('ventas')
+          .select('*');
+
+      const { data: abonos } =
+        await supabase
+          .from('abonos')
+          .select('*');
+
+      const { data: fondoMovs } =
+        await supabase
+          .from('fondo_movimientos')
+          .select('*');
+
+      const abonosPorVenta = {};
+
+      (abonos || []).forEach(a => {
+        if (a.venta_id) {
+          abonosPorVenta[a.venta_id] =
+            (abonosPorVenta[
+              a.venta_id
+            ] || 0) +
+            Number(a.monto);
+        }
+      });
+
+      let totalCobrado = 0;
+
+      (ventas || []).forEach(v => {
+        const abonadoInicial =
+          Number(v.abonado) || 0;
+
+        const abonosExtra =
+          abonosPorVenta[v.id] || 0;
+
+        totalCobrado +=
+          abonadoInicial +
+          abonosExtra;
+      });
+
+      const totalRetirado =
+        (fondoMovs || [])
+          .filter(
+            m =>
+              m.tipo === 'retiro' &&
+              m.id !== parseInt(id)
+          )
+          .reduce(
+            (sum, m) =>
+              sum + Number(m.monto),
+            0
+          );
+
+      const totalIngresado =
+        (fondoMovs || [])
+          .filter(
+            m => m.tipo === 'ingreso'
+          )
+          .reduce(
+            (sum, m) =>
+              sum + Number(m.monto),
+            0
+          );
+
+      const disponible =
+        totalCobrado +
+        totalIngresado -
+        totalRetirado;
+
+      if (
+        Number(monto) >
+        disponible
+      ) {
+        return res.status(400).json({
+          error:
+            `No hay suficiente dinero en caja. Disponible: $${disponible.toFixed(
+              2
+            )}`,
+        });
+      }
+    }
+
+    const { data, error } =
+      await supabase
+        .from('fondo_movimientos')
+        .update({
+          concepto,
+          monto: Number(monto),
+          tipo,
+          fecha,
+          notas,
+        })
+        .eq('id', id)
+        .select();
+
+    if (error) {
+      return res.status(400).json({
+        error: error.message,
+      });
+    }
+
+    res.json({
+      id: data[0].id,
+    });
   }
-  const { data, error } = await supabase.from('ahorro_movimientos').update({
-    tipo,
-    monto: Number(monto),
-    descripcion,
-    fecha
-  }).eq('id', id).select();
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ id: data[0].id });
-});
+);
 
-app.delete('/api/ahorro/movimientos/:id', async (req, res) => {
-  const { id } = req.params;
-  const { error } = await supabase.from('ahorro_movimientos').delete().eq('id', id);
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ ok: true });
-});
+app.delete(
+  '/api/fondo/movimientos/:id',
+  async (req, res) => {
+    const { id } = req.params;
+
+    const { error } =
+      await supabase
+        .from('fondo_movimientos')
+        .delete()
+        .eq('id', id);
+
+    if (error) {
+      return res.status(400).json({
+        error: error.message,
+      });
+    }
+
+    res.json({
+      ok: true,
+    });
+  }
+);
+
+// ============================================================
+// AHORRO CONFIG
+// ============================================================
+app.get(
+  '/api/ahorro/config',
+  async (req, res) => {
+    const { data, error } =
+      await supabase
+        .from('ahorro_config')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+
+    if (error) {
+      return res.status(400).json({
+        error: error.message,
+      });
+    }
+
+    if (!data) {
+      return res.status(404).json({
+        error: 'No configurado',
+      });
+    }
+
+    res.json(data);
+  }
+);
+
+app.post(
+  '/api/ahorro/config',
+  async (req, res) => {
+    const {
+      meta,
+      descripcion,
+    } = req.body;
+
+    if (!meta) {
+      return res.status(400).json({
+        error: 'Meta requerida',
+      });
+    }
+
+    const { data, error } =
+      await supabase
+        .from('ahorro_config')
+        .upsert({
+          id: 1,
+          meta: Number(meta),
+          descripcion,
+        })
+        .select();
+
+    if (error) {
+      return res.status(400).json({
+        error: error.message,
+      });
+    }
+
+    res.json({
+      ok: true,
+    });
+  }
+);
+
+// ============================================================
+// AHORRO MOVIMIENTOS
+// ============================================================
+app.get(
+  '/api/ahorro/movimientos',
+  async (req, res) => {
+    const { data, error } =
+      await supabase
+        .from('ahorro_movimientos')
+        .select('*')
+        .order('fecha', {
+          ascending: false,
+        });
+
+    if (error) {
+      return res.status(400).json({
+        error: error.message,
+      });
+    }
+
+    res.json(data);
+  }
+);
+
+app.post(
+  '/api/ahorro/movimientos',
+  async (req, res) => {
+    const {
+      tipo,
+      monto,
+      descripcion,
+      fecha,
+    } = req.body;
+
+    if (
+      !tipo ||
+      !monto ||
+      !fecha
+    ) {
+      return res.status(400).json({
+        error:
+          'Tipo, monto y fecha requeridos',
+      });
+    }
+
+    const { data, error } =
+      await supabase
+        .from('ahorro_movimientos')
+        .insert({
+          tipo,
+          monto: Number(monto),
+          descripcion,
+          fecha,
+        })
+        .select();
+
+    if (error) {
+      return res.status(400).json({
+        error: error.message,
+      });
+    }
+
+    res.json({
+      id: data[0].id,
+    });
+  }
+);
+
+app.put(
+  '/api/ahorro/movimientos/:id',
+  async (req, res) => {
+    const { id } = req.params;
+
+    const {
+      tipo,
+      monto,
+      descripcion,
+      fecha,
+    } = req.body;
+
+    if (
+      !tipo ||
+      !monto ||
+      !fecha
+    ) {
+      return res.status(400).json({
+        error:
+          'Tipo, monto y fecha requeridos',
+      });
+    }
+
+    const { data, error } =
+      await supabase
+        .from('ahorro_movimientos')
+        .update({
+          tipo,
+          monto: Number(monto),
+          descripcion,
+          fecha,
+        })
+        .eq('id', id)
+        .select();
+
+    if (error) {
+      return res.status(400).json({
+        error: error.message,
+      });
+    }
+
+    res.json({
+      id: data[0].id,
+    });
+  }
+);
+
+app.delete(
+  '/api/ahorro/movimientos/:id',
+  async (req, res) => {
+    const { id } = req.params;
+
+    const { error } =
+      await supabase
+        .from('ahorro_movimientos')
+        .delete()
+        .eq('id', id);
+
+    if (error) {
+      return res.status(400).json({
+        error: error.message,
+      });
+    }
+
+    res.json({
+      ok: true,
+    });
+  }
+);
 
 // ============================================================
 // SERVIDOR FRONTEND
 // ============================================================
-const distPath = path.join(__dirname, '../frontend/dist');
+const distPath = path.join(
+  __dirname,
+  '../frontend/dist'
+);
+
 if (fs.existsSync(distPath)) {
-  console.log('Sirviendo frontend desde:', distPath);
-  app.use(express.static(distPath));
+  console.log(
+    'Sirviendo frontend desde:',
+    distPath
+  );
+
+  app.use(
+    express.static(distPath)
+  );
+
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api')) return next();
-    res.sendFile(path.join(distPath, 'index.html'));
+    if (
+      req.path.startsWith('/api')
+    ) {
+      return next();
+    }
+
+    res.sendFile(
+      path.join(
+        distPath,
+        'index.html'
+      )
+    );
   });
 } else {
-  console.log('Frontend no encontrado, solo API disponible');
+  console.log(
+    'Frontend no encontrado, solo API disponible'
+  );
 }
 
 // ============================================================
 // ARRANQUE DEL SERVIDOR
 // ============================================================
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('Servidor corriendo en puerto ' + PORT);
-  console.log('Modo: ' + (process.env.NODE_ENV || 'development'));
-  console.log('Conectado a Supabase: ' + supabaseUrl);
-});
+app.listen(
+  PORT,
+  '0.0.0.0',
+  () => {
+    console.log(
+      'Servidor corriendo en puerto ' +
+        PORT
+    );
+
+    console.log(
+      'Modo: ' +
+        (process.env.NODE_ENV ||
+          'development')
+    );
+
+    console.log(
+      'Conectado a Supabase: ' +
+        supabaseUrl
+    );
+  }
+);
