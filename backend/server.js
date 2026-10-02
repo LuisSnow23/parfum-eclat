@@ -112,6 +112,33 @@ function gananciaUnitaria(p) {
 }
 
 // ============================================================
+// GUARDAR LOG DE ACTIVIDAD
+// ============================================================
+async function guardarLog(
+  usuario,
+  accion,
+  tabla,
+  registro_id,
+  datos_antes,
+  datos_despues,
+  notas = ''
+) {
+  try {
+    await supabase.from('logs').insert({
+      usuario: usuario || 'admin',
+      accion,
+      tabla,
+      registro_id: registro_id || null,
+      datos_antes: datos_antes || null,
+      datos_despues: datos_despues || null,
+      notas,
+    });
+  } catch (err) {
+    console.error('Error guardando log:', err);
+  }
+}
+
+// ============================================================
 // LOGIN
 // ============================================================
 app.post('/api/login', async (req, res) => {
@@ -144,6 +171,17 @@ app.post('/api/login', async (req, res) => {
     {
       expiresIn: '7d',
     }
+  );
+
+  // ✅ LOG de inicio de sesión
+  await guardarLog(
+    username,
+    'LOGIN',
+    'auth',
+    user.id,
+    null,
+    null,
+    `Inicio de sesión: ${username}`
   );
 
   res.json({
@@ -487,6 +525,26 @@ app.post('/api/perfumes', async (req, res) => {
     });
   }
 
+  // ✅ LOG
+  await guardarLog(
+    req.user?.username,
+    'CREAR',
+    'perfumes',
+    data[0].id,
+    null,
+    {
+      nombre,
+      proveedor,
+      precio_proveedor,
+      precio_publico,
+      piezas_compradas,
+      costo_envio,
+      piezas_envio,
+      notas,
+    },
+    `Perfume creado: ${nombre}`
+  );
+
   res.json({
     id: data[0].id,
   });
@@ -505,6 +563,13 @@ app.put('/api/perfumes/:id', async (req, res) => {
     piezas_envio,
     notas,
   } = req.body;
+
+  // ✅ Datos ANTES
+  const { data: antes } = await supabase
+    .from('perfumes')
+    .select('*')
+    .eq('id', id)
+    .single();
 
   const { data, error } =
     await supabase
@@ -539,6 +604,17 @@ app.put('/api/perfumes/:id', async (req, res) => {
     });
   }
 
+  // ✅ LOG
+  await guardarLog(
+    req.user?.username,
+    'EDITAR',
+    'perfumes',
+    Number(id),
+    antes,
+    data[0],
+    `Perfume editado: ${nombre}`
+  );
+
   res.json({
     id: data[0].id,
   });
@@ -548,6 +624,13 @@ app.delete(
   '/api/perfumes/:id',
   async (req, res) => {
     const { id } = req.params;
+
+    // ✅ Datos ANTES
+    const { data: antes } = await supabase
+      .from('perfumes')
+      .select('*')
+      .eq('id', id)
+      .single();
 
     const { error } = await supabase
       .from('perfumes')
@@ -559,6 +642,17 @@ app.delete(
         error: error.message,
       });
     }
+
+    // ✅ LOG
+    await guardarLog(
+      req.user?.username,
+      'ELIMINAR',
+      'perfumes',
+      Number(id),
+      antes,
+      null,
+      `Perfume eliminado: ${antes?.nombre || id}`
+    );
 
     res.json({
       ok: true,
@@ -695,6 +789,26 @@ app.post('/api/ventas', async (req, res) => {
     });
   }
 
+  // ✅ LOG
+  await guardarLog(
+    req.user?.username,
+    'CREAR',
+    'ventas',
+    data[0].id,
+    null,
+    {
+      perfume_id,
+      cliente,
+      cantidad,
+      total_venta,
+      tipo_pago,
+      abonado,
+      fecha,
+      notas,
+    },
+    `Venta creada: ${cliente || 'sin cliente'} - $${total_venta}`
+  );
+
   res.json({
     id: data[0].id,
   });
@@ -714,6 +828,13 @@ app.put('/api/ventas/:id', async (req, res) => {
     fecha,
     notas,
   } = req.body;
+
+  // ✅ Datos ANTES
+  const { data: antes } = await supabase
+    .from('ventas')
+    .select('*')
+    .eq('id', id)
+    .single();
 
   const { data, error } =
     await supabase
@@ -748,6 +869,17 @@ app.put('/api/ventas/:id', async (req, res) => {
     });
   }
 
+  // ✅ LOG
+  await guardarLog(
+    req.user?.username,
+    'EDITAR',
+    'ventas',
+    Number(id),
+    antes,
+    data[0],
+    `Venta editada: ${cliente || 'sin cliente'}`
+  );
+
   res.json({
     id: data[0].id,
   });
@@ -757,6 +889,13 @@ app.delete(
   '/api/ventas/:id',
   async (req, res) => {
     const { id } = req.params;
+
+    // ✅ Datos ANTES
+    const { data: antes } = await supabase
+      .from('ventas')
+      .select('*')
+      .eq('id', id)
+      .single();
 
     const { error } = await supabase
       .from('ventas')
@@ -768,6 +907,17 @@ app.delete(
         error: error.message,
       });
     }
+
+    // ✅ LOG
+    await guardarLog(
+      req.user?.username,
+      'ELIMINAR',
+      'ventas',
+      Number(id),
+      antes,
+      null,
+      `Venta eliminada: ${antes?.cliente || 'sin cliente'} - $${antes?.total_venta || 0}`
+    );
 
     res.json({
       ok: true,
@@ -822,6 +972,17 @@ app.post(
       });
     }
 
+    // ✅ LOG
+    await guardarLog(
+      req.user?.username,
+      'CREAR',
+      'abonos',
+      data[0].id,
+      null,
+      { venta_id, monto, fecha, notas },
+      `Abono registrado: $${monto} (venta #${venta_id})`
+    );
+
     res.json({
       id: data[0].id,
     });
@@ -852,6 +1013,13 @@ app.put('/api/abonos/:id', async (req, res) => {
     });
   }
 
+  // ✅ Datos ANTES
+  const { data: antes } = await supabase
+    .from('abonos')
+    .select('*')
+    .eq('id', id)
+    .single();
+
   const { data, error } =
     await supabase
       .from('abonos')
@@ -869,6 +1037,17 @@ app.put('/api/abonos/:id', async (req, res) => {
     });
   }
 
+  // ✅ LOG
+  await guardarLog(
+    req.user?.username,
+    'EDITAR',
+    'abonos',
+    Number(id),
+    antes,
+    data[0],
+    `Abono editado: $${antes?.monto || 0} → $${monto}`
+  );
+
   res.json({
     id: data[0].id,
   });
@@ -878,6 +1057,13 @@ app.delete(
   '/api/abonos/:id',
   async (req, res) => {
     const { id } = req.params;
+
+    // ✅ Datos ANTES
+    const { data: antes } = await supabase
+      .from('abonos')
+      .select('*')
+      .eq('id', id)
+      .single();
 
     const { error } = await supabase
       .from('abonos')
@@ -889,6 +1075,17 @@ app.delete(
         error: error.message,
       });
     }
+
+    // ✅ LOG
+    await guardarLog(
+      req.user?.username,
+      'ELIMINAR',
+      'abonos',
+      Number(id),
+      antes,
+      null,
+      `Abono eliminado: $${antes?.monto || 0} (venta #${antes?.venta_id || '?'})`
+    );
 
     res.json({
       ok: true,
@@ -1042,6 +1239,17 @@ app.post(
       });
     }
 
+    // ✅ LOG
+    await guardarLog(
+      req.user?.username,
+      'CREAR',
+      'fondo_movimientos',
+      data[0].id,
+      null,
+      { concepto, monto, tipo, fecha, notas },
+      `${tipo === 'retiro' ? 'Retiro' : 'Ingreso'} de fondo: $${monto} - ${concepto}`
+    );
+
     res.json({
       id: data[0].id,
     });
@@ -1186,6 +1394,17 @@ app.put(
       });
     }
 
+    // ✅ LOG
+    await guardarLog(
+      req.user?.username,
+      'EDITAR',
+      'fondo_movimientos',
+      Number(id),
+      original,
+      data[0],
+      `Movimiento de fondo editado: ${concepto}`
+    );
+
     res.json({
       id: data[0].id,
     });
@@ -1196,6 +1415,13 @@ app.delete(
   '/api/fondo/movimientos/:id',
   async (req, res) => {
     const { id } = req.params;
+
+    // ✅ Datos ANTES
+    const { data: antes } = await supabase
+      .from('fondo_movimientos')
+      .select('*')
+      .eq('id', id)
+      .single();
 
     const { error } =
       await supabase
@@ -1208,6 +1434,17 @@ app.delete(
         error: error.message,
       });
     }
+
+    // ✅ LOG
+    await guardarLog(
+      req.user?.username,
+      'ELIMINAR',
+      'fondo_movimientos',
+      Number(id),
+      antes,
+      null,
+      `Movimiento de fondo eliminado: ${antes?.concepto || id} - $${antes?.monto || 0}`
+    );
 
     res.json({
       ok: true,
@@ -1258,6 +1495,12 @@ app.post(
       });
     }
 
+    const { data: antes } = await supabase
+      .from('ahorro_config')
+      .select('*')
+      .eq('id', 1)
+      .maybeSingle();
+
     const { data, error } =
       await supabase
         .from('ahorro_config')
@@ -1273,6 +1516,17 @@ app.post(
         error: error.message,
       });
     }
+
+    // ✅ LOG
+    await guardarLog(
+      req.user?.username,
+      'EDITAR',
+      'ahorro_config',
+      1,
+      antes,
+      { meta, descripcion },
+      `Configuración de ahorro actualizada: meta $${meta}`
+    );
 
     res.json({
       ok: true,
@@ -1342,6 +1596,17 @@ app.post(
       });
     }
 
+    // ✅ LOG
+    await guardarLog(
+      req.user?.username,
+      'CREAR',
+      'ahorro_movimientos',
+      data[0].id,
+      null,
+      { tipo, monto, descripcion, fecha },
+      `Movimiento de ahorro: ${tipo} $${monto}`
+    );
+
     res.json({
       id: data[0].id,
     });
@@ -1371,6 +1636,13 @@ app.put(
       });
     }
 
+    // ✅ Datos ANTES
+    const { data: antes } = await supabase
+      .from('ahorro_movimientos')
+      .select('*')
+      .eq('id', id)
+      .single();
+
     const { data, error } =
       await supabase
         .from('ahorro_movimientos')
@@ -1389,6 +1661,17 @@ app.put(
       });
     }
 
+    // ✅ LOG
+    await guardarLog(
+      req.user?.username,
+      'EDITAR',
+      'ahorro_movimientos',
+      Number(id),
+      antes,
+      data[0],
+      `Movimiento de ahorro editado`
+    );
+
     res.json({
       id: data[0].id,
     });
@@ -1399,6 +1682,13 @@ app.delete(
   '/api/ahorro/movimientos/:id',
   async (req, res) => {
     const { id } = req.params;
+
+    // ✅ Datos ANTES
+    const { data: antes } = await supabase
+      .from('ahorro_movimientos')
+      .select('*')
+      .eq('id', id)
+      .single();
 
     const { error } =
       await supabase
@@ -1412,11 +1702,43 @@ app.delete(
       });
     }
 
+    // ✅ LOG
+    await guardarLog(
+      req.user?.username,
+      'ELIMINAR',
+      'ahorro_movimientos',
+      Number(id),
+      antes,
+      null,
+      `Movimiento de ahorro eliminado`
+    );
+
     res.json({
       ok: true,
     });
   }
 );
+
+// ============================================================
+// LOGS (GET) — consultar historial de actividad
+// ============================================================
+app.get('/api/logs', async (req, res) => {
+  const { tabla, accion, limite, desde } = req.query;
+
+  let query = supabase
+    .from('logs')
+    .select('*')
+    .order('creado_en', { ascending: false })
+    .limit(Number(limite) || 200);
+
+  if (tabla) query = query.eq('tabla', tabla);
+  if (accion) query = query.eq('accion', accion);
+  if (desde) query = query.gte('creado_en', desde);
+
+  const { data, error } = await query;
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
 
 // ============================================================
 // SERVIDOR FRONTEND
