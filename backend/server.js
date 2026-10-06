@@ -225,14 +225,13 @@ app.post('/api/login', async (req, res) => {
     }
   );
 
-  // LOG de inicio de sesión
   await guardarLog(
-    req,
+    { ...req, user: { username: username, id: user.id } }, 
     'LOGIN',
     'auth',
     user.id,
     null,
-    null,
+    { username: user.username },
     `Inicio de sesión: ${username}`
   );
 
