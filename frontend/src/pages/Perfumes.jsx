@@ -7,7 +7,8 @@ import {
   Package,
   CreditCard,
   Pencil,
-  Clock
+  Clock,
+  Archive
 } from 'lucide-react'
 import { api, fmt, fmtDate } from '../api'
 
@@ -61,6 +62,14 @@ export default function Perfumes() {
     cliente: '',
     perfume: '',
     estado: 'todos',
+    fechaInicio: '',
+    fechaFin: ''
+  })
+
+  // Filtros para el histórico de abonos finalizados
+  const [histAbonosFiltro, setHistAbonosFiltro] = useState({
+    cliente: '',
+    perfume: '',
     fechaInicio: '',
     fechaFin: ''
   })
@@ -187,12 +196,7 @@ export default function Perfumes() {
       cantidad: v.cantidad || 1,
       precio_unitario: v.precio_unitario ?? '',
       tipo_pago: v.tipo_pago || 'contado',
-
-      // IMPORTANTE:
-      // aquí cargamos SOLO el abono inicial.
-      // Los abonos posteriores siguen separados.
       abonado: v.abonado_inicial ?? '',
-
       fecha: v.fecha || hoy,
       notas: v.notas || '',
     })
@@ -362,6 +366,51 @@ export default function Perfumes() {
     return true
   })
 
+  // ✅ Abonos de ventas NO liquidadas (activos)
+  const ventasPendientesConAbonos = ventas
+    .filter(v => !v.liquidado && v.abonos?.length > 0)
+    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+
+  // ✅ Abonos de ventas liquidadas (histórico)
+  const ventasLiquidadasConAbonos = ventasLiquidadas
+    .filter(v => v.abonos?.length > 0)
+    .filter(v => {
+      if (
+        histAbonosFiltro.cliente &&
+        !v.cliente
+          ?.toLowerCase()
+          .includes(histAbonosFiltro.cliente.toLowerCase())
+      ) {
+        return false
+      }
+
+      if (
+        histAbonosFiltro.perfume &&
+        !v.perfume_nombre
+          ?.toLowerCase()
+          .includes(histAbonosFiltro.perfume.toLowerCase())
+      ) {
+        return false
+      }
+
+      if (
+        histAbonosFiltro.fechaInicio &&
+        v.fecha < histAbonosFiltro.fechaInicio
+      ) {
+        return false
+      }
+
+      if (
+        histAbonosFiltro.fechaFin &&
+        v.fecha > histAbonosFiltro.fechaFin
+      ) {
+        return false
+      }
+
+      return true
+    })
+    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+
   if (!resumen) {
     return (
       <div
@@ -397,6 +446,12 @@ export default function Perfumes() {
   const perfumesPaginados = perfumes.slice(
     inicioPerfumes,
     inicioPerfumes + PERFUMES_POR_PAGINA
+  )
+
+  // Totales del histórico de abonos
+  const totalAbonosHistoricos = ventasLiquidadasConAbonos.reduce(
+    (s, v) => s + v.abonos.reduce((s2, a) => s2 + Number(a.monto), 0),
+    0
   )
 
   return (
@@ -886,90 +941,115 @@ export default function Perfumes() {
         )}
       </div>
 
-      {ventas.some(v => v.abonos?.length > 0) && (
+      {/* ✅ HISTORIAL DE ABONOS ACTIVOS (solo ventas pendientes) */}
+      {ventasPendientesConAbonos.length > 0 && (
         <div
           className="card"
           style={{ marginTop: 20 }}
         >
-          <div className="section-title mb-4">
-            Historial de abonos
+          <div
+            className="section-title mb-4"
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap'
+            }}
+          >
+            <span>Historial de abonos (activos)</span>
+
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={() => {
+                setHistAbonosFiltro({
+                  cliente: '',
+                  perfume: '',
+                  fechaInicio: '',
+                  fechaFin: ''
+                })
+                setModal('historialAbonos')
+              }}
+              style={{ borderColor: 'var(--gold)' }}
+            >
+              <Archive size={14} />
+              Ver histórico completo
+            </button>
           </div>
 
-          {ventas
-            .filter(v => v.abonos?.length)
-            .map(v => (
+          {ventasPendientesConAbonos.map(v => (
+            <div
+              key={v.id}
+              style={{
+                marginBottom: 14,
+                paddingBottom: 10,
+                borderBottom:
+                  '1px solid var(--noir-border)',
+              }}
+            >
               <div
-                key={v.id}
                 style={{
-                  marginBottom: 14,
-                  paddingBottom: 10,
-                  borderBottom:
-                    '1px solid var(--noir-border)',
+                  fontSize: '0.85rem',
+                  color: 'var(--cream)',
+                  marginBottom: 6,
                 }}
               >
-                <div
-                  style={{
-                    fontSize: '0.85rem',
-                    color: 'var(--cream)',
-                    marginBottom: 6,
-                  }}
-                >
-                  {v.cliente || 'Cliente'} —{' '}
-                  {v.perfume_nombre} ({fmt(v.total_venta)})
-                </div>
-
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Fecha</th>
-                      <th>Monto</th>
-                      <th>Notas</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {v.abonos.map(a => (
-                      <tr key={a.id}>
-                        <td>
-                          {fmtDate(a.fecha)}
-                        </td>
-
-                        <td className="td-green">
-                          {fmt(a.monto)}
-                        </td>
-
-                        <td>
-                          {a.notas || '—'}
-                        </td>
-
-                        <td style={{ whiteSpace: 'nowrap' }}>
-                          <button
-                            className="btn-icon"
-                            title="Editar abono"
-                            onClick={() =>
-                              openEditAbono(a, v)
-                            }
-                          >
-                            <Pencil size={14} />
-                          </button>
-
-                          <button
-                            className="btn-icon"
-                            title="Eliminar abono"
-                            onClick={() =>
-                              eliminar('abonos', a.id)
-                            }
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {v.cliente || 'Cliente'} —{' '}
+                {v.perfume_nombre} ({fmt(v.total_venta)})
               </div>
-            ))}
+
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Monto</th>
+                    <th>Notas</th>
+                    <th></th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {v.abonos.map(a => (
+                    <tr key={a.id}>
+                      <td>
+                        {fmtDate(a.fecha)}
+                      </td>
+
+                      <td className="td-green">
+                        {fmt(a.monto)}
+                      </td>
+
+                      <td>
+                        {a.notas || '—'}
+                      </td>
+
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <button
+                          className="btn-icon"
+                          title="Editar abono"
+                          onClick={() =>
+                            openEditAbono(a, v)
+                          }
+                        >
+                          <Pencil size={14} />
+                        </button>
+
+                        <button
+                          className="btn-icon"
+                          title="Eliminar abono"
+                          onClick={() =>
+                            eliminar('abonos', a.id)
+                          }
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
         </div>
       )}
 
@@ -983,7 +1063,7 @@ export default function Perfumes() {
             onClick={e => e.stopPropagation()}
             style={{
               maxWidth:
-                modal === 'historial'
+                modal === 'historial' || modal === 'historialAbonos'
                   ? 800
                   : 520,
             }}
@@ -1007,6 +1087,9 @@ export default function Perfumes() {
 
                 {modal === 'historial' &&
                   'Historial de ventas liquidadas'}
+
+                {modal === 'historialAbonos' &&
+                  'Histórico de abonos finalizados'}
               </span>
 
               <button
@@ -1192,6 +1275,162 @@ export default function Perfumes() {
                             0
                           )
                         )}
+                      </strong>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ✅ MODAL DE HISTÓRICO DE ABONOS FINALIZADOS */}
+              {modal === 'historialAbonos' && (
+                <>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 10,
+                      marginBottom: 16,
+                    }}
+                  >
+                    <input
+                      className="form-input"
+                      placeholder="Buscar cliente..."
+                      value={histAbonosFiltro.cliente}
+                      onChange={e =>
+                        setHistAbonosFiltro(f => ({
+                          ...f,
+                          cliente: e.target.value,
+                        }))
+                      }
+                    />
+
+                    <input
+                      className="form-input"
+                      placeholder="Buscar perfume..."
+                      value={histAbonosFiltro.perfume}
+                      onChange={e =>
+                        setHistAbonosFiltro(f => ({
+                          ...f,
+                          perfume: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      maxHeight: 450,
+                      overflowY: 'auto',
+                    }}
+                  >
+                    {ventasLiquidadasConAbonos.length === 0 ? (
+                      <div className="empty-state">
+                        <p>No hay abonos de ventas liquidadas</p>
+                      </div>
+                    ) : (
+                      ventasLiquidadasConAbonos.map(v => (
+                        <div
+                          key={v.id}
+                          style={{
+                            marginBottom: 14,
+                            paddingBottom: 10,
+                            borderBottom:
+                              '1px solid var(--noir-border)',
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: '0.85rem',
+                              color: 'var(--cream)',
+                              marginBottom: 6,
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              flexWrap: 'wrap',
+                              gap: 6,
+                            }}
+                          >
+                            <span>
+                              {v.cliente || 'Cliente'} —{' '}
+                              {v.perfume_nombre} ({fmt(v.total_venta)})
+                            </span>
+
+                            <span
+                              className="badge badge-green"
+                              style={{ fontSize: '0.65rem' }}
+                            >
+                              Liquidado
+                            </span>
+                          </div>
+
+                          <table className="data-table">
+                            <thead>
+                              <tr>
+                                <th>Fecha</th>
+                                <th>Monto</th>
+                                <th>Notas</th>
+                              </tr>
+                            </thead>
+
+                            <tbody>
+                              {v.abonos.map(a => (
+                                <tr key={a.id}>
+                                  <td>
+                                    {fmtDate(a.fecha)}
+                                  </td>
+
+                                  <td className="td-green">
+                                    {fmt(a.monto)}
+                                  </td>
+
+                                  <td>
+                                    {a.notas || '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 16,
+                      display: 'flex',
+                      gap: 20,
+                      justifyContent: 'flex-end',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '0.85rem',
+                        color: 'var(--cream-dim)',
+                      }}
+                    >
+                      Ventas liquidadas:{' '}
+                      <strong
+                        style={{
+                          color: 'var(--cream)'
+                        }}
+                      >
+                        {ventasLiquidadasConAbonos.length}
+                      </strong>
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: '0.85rem',
+                        color: 'var(--cream-dim)',
+                      }}
+                    >
+                      Total abonos históricos:{' '}
+                      <strong                        style={{
+                          color: '#4a8c6a'
+                        }}
+                      >
+                        {fmt(totalAbonosHistoricos)}
                       </strong>
                     </div>
                   </div>
@@ -1794,29 +2033,33 @@ export default function Perfumes() {
                   setEditAbonoId(null)
                 }}
               >
-                Cancelar
+                {modal === 'historial' || modal === 'historialAbonos'
+                  ? 'Cerrar'
+                  : 'Cancelar'}
               </button>
 
-              <button
-                className="btn btn-gold"
-                onClick={() => {
-                  if (modal === 'perfume') {
-                    submitPerfume()
-                  }
+              {modal !== 'historial' && modal !== 'historialAbonos' && (
+                <button
+                  className="btn btn-gold"
+                  onClick={() => {
+                    if (modal === 'perfume') {
+                      submitPerfume()
+                    }
 
-                  if (modal === 'venta') {
-                    submitVenta()
-                  }
+                    if (modal === 'venta') {
+                      submitVenta()
+                    }
 
-                  if (modal === 'abono') {
-                    submitAbono()
-                  }
-                }}
-              >
-                {editId || editAbonoId
-                  ? 'Guardar cambios'
-                  : 'Guardar'}
-              </button>
+                    if (modal === 'abono') {
+                      submitAbono()
+                    }
+                  }}
+                >
+                  {editId || editAbonoId
+                    ? 'Guardar cambios'
+                    : 'Guardar'}
+                </button>
+              )}
             </div>
           </div>
         </div>
