@@ -52,29 +52,27 @@ export default function Clientes() {
 
   // Generar mensaje de WhatsApp
   const generarMensajeWhatsApp = (cliente) => {
-    // Buscar la venta con más deuda
-    const ventaConDeuda = cliente.ventas
-      .filter(v => !v.liquidado)
-      .sort((a, b) => b.resto - a.resto)[0]
+        const ventaConDeuda = cliente.ventas
+            .filter(v => !v.liquidado)
+            .sort((a, b) => b.resto - a.resto)[0]
 
-    if (!ventaConDeuda) {
-      return `Hola ${cliente.nombre}! 👋`
-    }
+        if (!ventaConDeuda) {
+            return `Hola ${cliente.nombre}! \u{1F44B}`
+        }
 
-    const mensaje = `Hola ${cliente.nombre}! 👋
+        const mensaje = `Hola ${cliente.nombre}! \u{1F44B}
 
-Te recuerdo que tienes un saldo pendiente:
+        Te recuerdo que tienes un saldo pendiente:
 
-🧴 Perfume: ${ventaConDeuda.perfume}
-💰 Total: $${ventaConDeuda.total}
-✅ Abonado: $${ventaConDeuda.abonado}
-⏳ Resta: $${ventaConDeuda.resto}
+        \u{1F9F4} Perfume: ${ventaConDeuda.perfume}
+        \u{1F4B0} Total: $${ventaConDeuda.total}
+        \u2705 Abonado: $${ventaConDeuda.abonado}
+        \u23F3 Resta: $${ventaConDeuda.resto}
 
-¿Cuándo podrías abonar? ¡Gracias! 🙌`
+        ¿Cuándo podrías abonar? ¡Gracias! \u{1F64C}`
 
-    return mensaje
-  }
-
+        return mensaje
+        }
   const abrirWhatsApp = (cliente) => {
     const mensaje = generarMensajeWhatsApp(cliente)
     const url = `https://wa.me/?text=${encodeURIComponent(mensaje)}`
