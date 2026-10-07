@@ -39,12 +39,12 @@ function Sidebar() {
         <NavLink to="/fondo" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
           <Wallet size={16} />
           <span>Fondo(pellizcos o prestamos)</span>
+        </NavLink>
         <NavLink
           to="/clientes"
           className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
           <Users size={16} />
           <span>Clientes</span>
-        </NavLink>
         </NavLink>
 
         <div className="nav-item" style={{ cursor: 'pointer', marginTop: 'auto' }} onClick={() => {
