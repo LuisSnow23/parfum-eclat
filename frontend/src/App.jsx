@@ -5,6 +5,8 @@ import Perfumes from './pages/Perfumes';
 import Ahorro from './pages/Ahorro';
 import Login from './Login';
 import Fondo from './pages/Fondo';
+import Clientes from './pages/Clientes';
+import { Users } from 'lucide-react';
 import logo from './assets/logo-pe.jpeg';
 
 function Sidebar() {
@@ -37,6 +39,12 @@ function Sidebar() {
         <NavLink to="/fondo" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
           <Wallet size={16} />
           <span>Fondo(pellizcos o prestamos)</span>
+        <NavLink
+          to="/clientes"
+          className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <Users size={16} />
+          <span>Clientes</span>
+        </NavLink>
         </NavLink>
 
         <div className="nav-item" style={{ cursor: 'pointer', marginTop: 'auto' }} onClick={() => {
@@ -74,6 +82,7 @@ export default function App() {
             <Route path="/" element={<Perfumes />} />
             <Route path="/ahorro" element={<Ahorro />} />
             <Route path="/fondo" element={<Fondo />} />
+            <Route path="/clientes" element={<Clientes />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </main>

@@ -387,6 +387,95 @@ app.get('/api/resumen', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+// ============================================================
+// CLIENTES (agrupados)
+// ============================================================
+app.get('/api/clientes', async (req, res) => {
+  try {
+    const { data: ventas } = await supabase
+      .from('ventas')
+      .select('*, perfumes(nombre), abonos(*)');
+
+    const { data: abonos } = await supabase
+      .from('abonos')
+      .select('*');
+
+    const V = ventas || [];
+    const A = abonos || [];
+
+    // Agrupar abonos por venta
+    const abonosPorVenta = {};
+    A.forEach(a => {
+      if (a.venta_id) {
+        abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
+      }
+    });
+
+    // Agrupar por cliente
+    const clientes = {};
+
+    V.forEach(v => {
+      const nombre = (v.cliente || 'Sin nombre').trim();
+      if (!nombre) return;
+
+      if (!clientes[nombre]) {
+        clientes[nombre] = {
+          nombre,
+          total_perfumes: 0,
+          total_ventas: 0,
+          total_acordado: 0,
+          total_cobrado: 0,
+          total_por_cobrar: 0,
+          primera_compra: v.fecha,
+          ultima_compra: v.fecha,
+          ventas: [],
+          perfumes: []
+        };
+      }
+
+      const c = clientes[nombre];
+      const cantidad = Number(v.cantidad) || 0;
+      const total = Number(v.total_venta) || 0;
+      const abonadoInicial = Number(v.abonado) || 0;
+      const abonosExtra = abonosPorVenta[v.id] || 0;
+      const abonado = abonadoInicial + abonosExtra;
+      const resto = Math.max(total - abonado, 0);
+
+      c.total_perfumes += cantidad;
+      c.total_ventas += 1;
+      c.total_acordado += total;
+      c.total_cobrado += abonado;
+      c.total_por_cobrar += resto;
+
+      if (v.fecha < c.primera_compra) c.primera_compra = v.fecha;
+      if (v.fecha > c.ultima_compra) c.ultima_compra = v.fecha;
+
+      c.ventas.push({
+        id: v.id,
+        fecha: v.fecha,
+        perfume: v.perfumes?.nombre || '-',
+        cantidad,
+        total,
+        abonado,
+        resto,
+        liquidado: resto <= 0.009,
+        tipo_pago: v.tipo_pago
+      });
+
+      c.perfumes.push(v.perfumes?.nombre || '-');
+    });
+
+    // Convertir a array y ordenar por total de perfumes
+    const lista = Object.values(clientes).sort(
+      (a, b) => b.total_perfumes - a.total_perfumes
+    );
+
+    res.json(lista);
+  } catch (error) {
+    console.error('Error en /api/clientes:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ============================================================
 // PERFUMES
