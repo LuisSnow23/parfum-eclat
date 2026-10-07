@@ -41,47 +41,6 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 console.log('Conectado a Supabase');
 
 // ============================================================
-// CREAR/ACTUALIZAR ADMIN AL INICIAR
-// ============================================================
-async function crearAdminSupabase() {
-  const defaultPass = 'Chichicuilote1*';
-  const hash = bcrypt.hashSync(defaultPass, 10);
-
-  console.log('Verificando usuario admin...');
-
-  const { data: existing } = await supabase
-    .from('usuarios')
-    .select('id')
-    .eq('username', 'admin')
-    .maybeSingle();
-
-  if (existing) {
-    await supabase
-      .from('usuarios')
-      .update({
-        password_hash: hash,
-      })
-      .eq('username', 'admin');
-
-    console.log('Admin actualizado.');
-    return;
-  }
-
-  const { error } = await supabase.from('usuarios').insert({
-    username: 'admin',
-    password_hash: hash,
-  });
-
-  if (error) {
-    console.log('Error creando admin:', error.message);
-  } else {
-    console.log('Admin creado. Contrasena:', defaultPass);
-  }
-}
-
-crearAdminSupabase();
-
-// ============================================================
 // FUNCIONES AUXILIARES
 // ============================================================
 function envioUnitario(p) {
