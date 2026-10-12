@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
-import { Package, PiggyBank, Wallet } from 'lucide-react';
+import { Package, PiggyBank, Wallet, Users, BarChart3 } from 'lucide-react';
 import Perfumes from './pages/Perfumes';
 import Ahorro from './pages/Ahorro';
 import Login from './Login';
 import Fondo from './pages/Fondo';
 import Clientes from './pages/Clientes';
-import { Users } from 'lucide-react';
-import logo from './assets/logo-pe.jpeg';
 import Reporte from './pages/Reporte';
+import logo from './assets/logo-pe.jpeg';
 
 function Sidebar() {
   return (
@@ -48,12 +47,12 @@ function Sidebar() {
           <span>Clientes</span>
         </NavLink>
         <NavLink
-            to="/reporte"
-            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+          to="/reporte"
+          className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
         >
-            <BarChart3 size={16} />
-            <span>Reporte</span>
-          </NavLink>
+          <BarChart3 size={16} />
+          <span>Reporte</span>
+        </NavLink>
 
         <div className="nav-item" style={{ cursor: 'pointer', marginTop: 'auto' }} onClick={() => {
           localStorage.removeItem('token');
