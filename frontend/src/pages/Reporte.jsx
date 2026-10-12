@@ -39,7 +39,7 @@ export default function Reporte() {
   }
 
   const r = reporte
-  const gano = r.utilidad_total > 0
+  const gano = r.ganancia_sobre_inversion > 0
   const colorGanancia = gano ? '#4a8c6a' : '#c45c5c'
 
   return (
@@ -56,16 +56,14 @@ export default function Reporte() {
         </div>
       </div>
 
-      {/* ---- BANNER: ¿Vamos ganando? ---- */}
+      {/* ---- BANNER: Total del negocio ---- */}
       <div
         className="card"
         style={{
           marginBottom: 24,
           padding: 24,
-          borderLeft: `4px solid ${colorGanancia}`,
-          background: gano
-            ? 'rgba(74, 140, 106, 0.05)'
-            : 'rgba(196, 92, 92, 0.05)',
+          borderLeft: '4px solid #c9a84c',
+          background: 'rgba(201, 168, 76, 0.05)',
         }}
       >
         <div
@@ -76,11 +74,7 @@ export default function Reporte() {
             flexWrap: 'wrap',
           }}
         >
-          {gano ? (
-            <CheckCircle size={48} style={{ color: colorGanancia }} />
-          ) : (
-            <AlertCircle size={48} style={{ color: colorGanancia }} />
-          )}
+          <BarChart3 size={48} style={{ color: '#c9a84c' }} />
 
           <div style={{ flex: 1, minWidth: 200 }}>
             <div
@@ -92,32 +86,33 @@ export default function Reporte() {
                 marginBottom: 4,
               }}
             >
-              {gano ? '✅ ¡VAMOS GANANDO!' : '⚠️ AÚN NO GANAMOS'}
+              📊 TOTAL DEL NEGOCIO
             </div>
 
             <div
               style={{
                 fontFamily: 'var(--font-display)',
                 fontSize: '2.5rem',
-                color: colorGanancia,
+                color: '#c9a84c',
                 lineHeight: 1,
                 marginBottom: 8,
               }}
             >
-              {fmt(r.utilidad_total)}
+              {fmt(r.total_negocio)}
             </div>
 
             <div
               style={{
                 fontSize: '0.85rem',
                 color: 'var(--cream-dim)',
+                lineHeight: 1.6,
               }}
             >
-              Es la ganancia que tendríamos si cerráramos HOY
-              (cobrando todo y vendiendo el stock a precio público).
+              Este es el total del negocio si cobramos TODO lo que nos deben
+              y vendemos TODO el stock al precio público.
               <br />
               <strong style={{ color: 'var(--cream)' }}>
-                Invertimos {fmt(r.inversion_inicial)} entre los 2.
+                Recuerda: pusimos {fmt(r.inversion_inicial_referencia)} al inicio entre los 2 socios.
               </strong>
             </div>
           </div>
@@ -133,8 +128,9 @@ export default function Reporte() {
         <div className="stats-grid" style={{ margin: 0 }}>
           <Kpi
             label="Inversión inicial"
-            value={fmt(r.inversion_inicial)}
+            value={fmt(r.inversion_inicial_referencia)}
             hint="$3,000 de cada socio"
+            color="#8b5cf6"
           />
           <Kpi
             label="Capital total invertido"
@@ -241,34 +237,62 @@ export default function Reporte() {
             lineHeight: 1.6,
           }}
         >
-          Dos escenarios posibles. El primero es el más realista.
+          Este es el <strong style={{ color: 'var(--cream)' }}>total del negocio</strong> si
+          cobramos TODO lo que nos deben y vendemos TODO el stock al precio público.
         </div>
 
         <div className="stats-grid" style={{ margin: 0 }}>
           <Kpi
-            label="Si vendemos TODO al público"
-            value={fmt(r.escenario_cierre.total_a_publico)}
-            hint="Cobramos todo + vendemos stock al público"
+            label="Caja (dinero hoy)"
+            value={fmt(r.dinero_en_caja)}
+            hint="Lo que tenemos disponible"
             color="#4a8c6a"
           />
           <Kpi
-            label="Si vendemos el stock a costo"
-            value={fmt(r.escenario_cierre.total_a_costo)}
-            hint="Cobramos todo + vendemos stock al costo"
+            label="Por cobrar"
+            value={fmt(r.por_cobrar)}
+            hint="Clientes que nos deben"
+            color="#c9a84c"
+          />
+          <Kpi
+            label="Stock a público"
+            value={fmt(r.valor_stock_publico)}
+            hint="Si se vende todo al público"
+            color="#c9a84c"
+          />
+          <Kpi
+            label="TOTAL DEL NEGOCIO"
+            value={fmt(r.total_negocio)}
+            hint="Suma de todo lo anterior"
+            color="var(--gold)"
           />
         </div>
 
         <div
           style={{
-            marginTop: 20,
+            marginTop: 24,
             padding: 16,
-            background: 'var(--black-soft)',
+            background: 'rgba(201, 168, 76, 0.05)',
             borderRadius: 6,
+            border: '1px solid rgba(201, 168, 76, 0.3)',
             display: 'flex',
             flexDirection: 'column',
             gap: 12,
           }}
         >
+          <div
+            style={{
+              fontSize: '0.75rem',
+              color: 'var(--cream-dim)',
+              marginBottom: 4,
+              lineHeight: 1.6,
+            }}
+          >
+            ⚠️ <strong>RECUERDA:</strong> Cada uno puso $3,000 al inicio
+            (total {fmt(r.inversion_inicial_referencia)} entre los 2).
+            Ese dinero <strong>NO</strong> se perdió, está dentro del negocio.
+          </div>
+
           <div
             style={{
               display: 'flex',
@@ -278,10 +302,10 @@ export default function Reporte() {
             }}
           >
             <span style={{ color: 'var(--cream-dim)', fontSize: '0.85rem' }}>
-              Total a cobrar + vender al público:
+              Total del negocio:
             </span>
             <strong style={{ color: 'var(--cream)' }}>
-              {fmt(r.escenario_cierre.total_a_publico)}
+              {fmt(r.total_negocio)}
             </strong>
           </div>
 
@@ -294,10 +318,10 @@ export default function Reporte() {
             }}
           >
             <span style={{ color: 'var(--cream-dim)', fontSize: '0.85rem' }}>
-              − Inversión inicial:
+              − Lo que pusimos al inicio:
             </span>
             <strong style={{ color: 'var(--cream)' }}>
-              − {fmt(r.inversion_inicial)}
+              − {fmt(r.inversion_inicial_referencia)}
             </strong>
           </div>
 
@@ -318,7 +342,7 @@ export default function Reporte() {
                 fontSize: '0.95rem',
               }}
             >
-              = GANANCIA TOTAL
+              = GANANCIA sobre la inversión inicial
             </span>
             <strong
               style={{
@@ -327,7 +351,7 @@ export default function Reporte() {
                 fontFamily: 'var(--font-display)',
               }}
             >
-              {fmt(r.utilidad_total)}
+              {fmt(r.ganancia_sobre_inversion)}
             </strong>
           </div>
         </div>
@@ -421,7 +445,7 @@ export default function Reporte() {
           />
           <Fila
             label="Total invertido entre los 2"
-            value={fmt(r.inversion_inicial)}
+            value={fmt(r.inversion_inicial_referencia)}
             color="var(--cream)"
           />
           <Fila
@@ -463,14 +487,14 @@ export default function Reporte() {
             }}
           >
             <Fila
-              label="SI CERRAMOS HOY (al público)"
-              value={fmt(r.escenario_cierre.total_a_publico)}
+              label="TOTAL DEL NEGOCIO (al público)"
+              value={fmt(r.total_negocio)}
               color="var(--gold)"
               bold
             />
             <Fila
-              label="− Lo que invertimos"
-              value={`− ${fmt(r.inversion_inicial)}`}
+              label="− Lo que pusimos al inicio"
+              value={`− ${fmt(r.inversion_inicial_referencia)}`}
               color="var(--cream-dim)"
             />
             <div
@@ -491,7 +515,7 @@ export default function Reporte() {
                   color: 'var(--cream)',
                 }}
               >
-                GANANCIA TOTAL
+                GANANCIA REAL
               </span>
               <span
                 style={{
@@ -500,7 +524,7 @@ export default function Reporte() {
                   color: colorGanancia,
                 }}
               >
-                {fmt(r.utilidad_total)}
+                {fmt(r.ganancia_sobre_inversion)}
               </span>
             </div>
           </div>
@@ -517,7 +541,7 @@ export default function Reporte() {
               color: '#4a8c6a',
             }}
           >
-            {fmt(r.ganancia_por_socio)} para cada uno
+            {fmt(r.ganancia_por_socio)} de ganancia para cada uno
           </div>
         </div>
       </div>

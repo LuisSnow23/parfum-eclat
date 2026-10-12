@@ -64,10 +64,8 @@ function gananciaUnitaria(p) {
 // OBTENER IP DEL CLIENTE
 // ============================================================
 function obtenerIP(req) {
-  // Render pone la IP real en este header
   const forwarded = req.headers['x-forwarded-for'];
   if (forwarded) {
-    // Puede venir "IP1, IP2, IP3" — la primera es la del cliente
     return forwarded.split(',')[0].trim();
   }
   return (
@@ -78,205 +76,50 @@ function obtenerIP(req) {
 }
 
 // ============================================================
-// REPORTE EJECUTIVO (para socios)
-// ============================================================
-app.get('/api/reporte', async (req, res) => {
-  try {
-    const { data: perfumes } = await supabase.from('perfumes').select('*');
-    const { data: ventas } = await supabase.from('ventas').select('*');
-    const { data: abonos } = await supabase.from('abonos').select('*');
-    const { data: fondoMovimientos } = await supabase.from('fondo_movimientos').select('*');
-
-    const P = perfumes || [];
-    const V = ventas || [];
-
-    // ---- Ventas por perfume ----
-    const vendidasPorPerfume = {};
-    V.forEach(v => {
-      if (v.perfume_id) {
-        vendidasPorPerfume[v.perfume_id] =
-          (vendidasPorPerfume[v.perfume_id] || 0) + (Number(v.cantidad) || 0);
-      }
-    });
-
-    // ---- Abonos por venta ----
-    const abonosPorVenta = {};
-    (abonos || []).forEach(a => {
-      if (a.venta_id) {
-        abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
-      }
-    });
-
-    // ---- Capital invertido (a costo, TODOS los perfumes comprados) ----
-    let capital_invertido = 0;
-    P.forEach(p => {
-      const cu = costoUnitario(p);
-      const compradas = Number(p.piezas_compradas) || 0;
-      capital_invertido += cu * compradas;
-    });
-
-    // ---- Ventas totales (a precio público) ----
-    let total_vendido = 0;
-    let total_cobrado = 0;
-    let por_cobrar = 0;
-    let unidades_vendidas = 0;
-
-    V.forEach(v => {
-      const total = Number(v.total_venta) || 0;
-      const abonadoInicial = Number(v.abonado) || 0;
-      const abonosExtra = abonosPorVenta[v.id] || 0;
-      const abonado = abonadoInicial + abonosExtra;
-      const resto = Math.max(total - abonado, 0);
-
-      total_vendido += total;
-      total_cobrado += abonado;
-      por_cobrar += resto;
-      unidades_vendidas += Number(v.cantidad) || 0;
-    });
-
-    // ---- Capital en inventario (a costo, solo lo no vendido) ----
-    let capital_en_inventario = 0;
-    let valor_stock_publico = 0;
-    let unidades_en_stock = 0;
-
-    P.forEach(p => {
-      const cu = costoUnitario(p);
-      const compradas = Number(p.piezas_compradas) || 0;
-      const vendidas = vendidasPorPerfume[p.id] || 0;
-      const stock = Math.max(compradas - vendidas, 0);
-
-      capital_en_inventario += cu * stock;
-      valor_stock_publico += (Number(p.precio_publico) || 0) * stock;
-      unidades_en_stock += stock;
-    });
-
-    // ---- Costo de lo vendido ----
-    let costo_de_lo_vendido = 0;
-    P.forEach(p => {
-      const cu = costoUnitario(p);
-      const vendidas = vendidasPorPerfume[p.id] || 0;
-      costo_de_lo_vendido += cu * vendidas;
-    });
-
-    // ---- Ganancia realizada ----
-    const ganancia_realizada = total_cobrado - costo_de_lo_vendido;
-
-    // ---- Dinero en caja ----
-    const totalRetiradoFondo = (fondoMovimientos || [])
-      .filter(m => m.tipo === 'retiro')
-      .reduce((sum, m) => sum + Number(m.monto), 0);
-
-    const totalIngresadoFondo = (fondoMovimientos || [])
-      .filter(m => m.tipo === 'ingreso')
-      .reduce((sum, m) => sum + Number(m.monto), 0);
-
-    const dinero_en_caja = Math.max(
-      total_cobrado + totalIngresadoFondo - totalRetiradoFondo,
-      0
-    );
-
-    // ---- Escenario: ¿qué pasa si cierran HOY? ----
-    const escenario_cierre = {
-      // Cobrar TODO y vender TODO el stock
-      total_a_publico: dinero_en_caja + por_cobrar + valor_stock_publico,
-      // Cobrar TODO y vender el stock a costo
-      total_a_costo: dinero_en_caja + por_cobrar + capital_en_inventario,
-      // Lo que ya se cobró
-      total_cobrado,
-      // Lo que falta por cobrar
-      por_cobrar,
-      // Valor del stock a precio público
-      valor_stock_publico,
-      // Valor del stock a costo
-      capital_en_inventario,
-    };
-
-    // ---- Inversión inicial de socios ----
-    const INVERSION_INICIAL = 6000; // 3000 de cada uno
-
-    // ---- Utilidad sobre inversión inicial ----
-    const utilidad_total = escenario_cierre.total_a_publico - INVERSION_INICIAL;
-    const utilidad_total_costo = escenario_cierre.total_a_costo - INVERSION_INICIAL;
-
-    res.json({
-      // Números principales para el socio
-      inversion_inicial: INVERSION_INICIAL,
-      capital_invertido,
-      capital_en_inventario,
-      valor_stock_publico,
-      total_vendido,
-      total_cobrado,
-      por_cobrar,
-      dinero_en_caja,
-      costo_de_lo_vendido,
-      ganancia_realizada,
-
-      // Unidades
-      unidades_vendidas,
-      unidades_en_stock,
-      total_unidades_compradas: unidades_vendidas + unidades_en_stock,
-
-      // Escenarios de cierre
-      escenario_cierre,
-
-      // Utilidad
-      utilidad_total,
-      utilidad_total_costo,
-      ganancia_por_socio: utilidad_total / 2,
-      ganancia_por_socio_costo: utilidad_total_costo / 2,
-
-      // Porcentaje de rentabilidad
-      rentabilidad: INVERSION_INICIAL > 0
-        ? ((utilidad_total / INVERSION_INICIAL) * 100).toFixed(2)
-        : 0,
-
-      // Totales del fondo
-      total_retirado_fondo: totalRetiradoFondo,
-      total_ingresado_fondo: totalIngresadoFondo,
-    });
-  } catch (error) {
-    console.error('Error en /api/reporte:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ============================================================
-// OBTENER UBICACION POR IP (ciudad, región, país)
+// OBTENER UBICACION POR IP
 // ============================================================
 async function obtenerUbicacionIP(ip) {
-  try {
-    // No consultar si es IP local
-    if (
-      !ip ||
-      ip === 'desconocida' ||
-      ip === '127.0.0.1' ||
-      ip === '::1' ||
-      ip.startsWith('192.168.') ||
-      ip.startsWith('10.') ||
-      ip.startsWith('172.')
-    ) {
-      return 'Local';
-    }
+  if (
+    !ip ||
+    ip === 'desconocida' ||
+    ip === '127.0.0.1' ||
+    ip === '::1' ||
+    ip.startsWith('192.168.') ||
+    ip.startsWith('10.') ||
+    ip.startsWith('172.')
+  ) {
+    return 'Local';
+  }
 
+  try {
     const res = await fetch(`https://ipapi.co/${ip}/json/`);
     const data = await res.json();
 
-    if (data.error) return 'Desconocida';
-
-    const partes = [
-      data.city,
-      data.region,
-      data.country_name,
-    ].filter(Boolean);
-
-    return partes.join(', ') || 'Desconocida';
+    if (!data.error && data.city) {
+      const partes = [data.city, data.region, data.country_name].filter(Boolean);
+      return partes.join(', ');
+    }
   } catch (err) {
-    return 'Desconocida';
+    console.log('ipapi.co falló, intentando con ipwho.is...');
   }
+
+  try {
+    const res2 = await fetch(`https://ipwho.is/${ip}`);
+    const data2 = await res2.json();
+
+    if (data2.success && data2.city) {
+      const partes = [data2.city, data2.region, data2.country].filter(Boolean);
+      return partes.join(', ');
+    }
+  } catch (err) {
+    console.log('ipwho.is también falló');
+  }
+
+  return 'Desconocida';
 }
 
 // ============================================================
-// GUARDAR LOG DE ACTIVIDAD (con IP, user-agent y ubicación)
+// GUARDAR LOG DE ACTIVIDAD
 // ============================================================
 async function guardarLog(
   req,
@@ -348,7 +191,7 @@ app.post('/api/login', async (req, res) => {
   );
 
   await guardarLog(
-    { ...req, user: { username: username, id: user.id } }, 
+    { ...req, user: { username: username, id: user.id } },
     'LOGIN',
     'auth',
     user.id,
@@ -391,18 +234,9 @@ app.use('/api', authenticateToken);
 // ============================================================
 app.get('/api/resumen', async (req, res) => {
   try {
-    const { data: perfumes } = await supabase
-      .from('perfumes')
-      .select('*');
-
-    const { data: ventas } = await supabase
-      .from('ventas')
-      .select('*');
-
-    const { data: abonos } = await supabase
-      .from('abonos')
-      .select('*');
-
+    const { data: perfumes } = await supabase.from('perfumes').select('*');
+    const { data: ventas } = await supabase.from('ventas').select('*');
+    const { data: abonos } = await supabase.from('abonos').select('*');
     const { data: fondoMovimientos } = await supabase
       .from('fondo_movimientos')
       .select('*');
@@ -411,27 +245,22 @@ app.get('/api/resumen', async (req, res) => {
     const V = ventas || [];
 
     const vendidasPorPerfume = {};
-
     V.forEach(v => {
       if (v.perfume_id) {
         vendidasPorPerfume[v.perfume_id] =
-          (vendidasPorPerfume[v.perfume_id] || 0) +
-          (Number(v.cantidad) || 0);
+          (vendidasPorPerfume[v.perfume_id] || 0) + (Number(v.cantidad) || 0);
       }
     });
 
     const abonosPorVenta = {};
-
     (abonos || []).forEach(a => {
       if (a.venta_id) {
         abonosPorVenta[a.venta_id] =
-          (abonosPorVenta[a.venta_id] || 0) +
-          Number(a.monto);
+          (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
       }
     });
 
     let totalCobradoVentas = 0;
-
     V.forEach(v => {
       const abonadoInicial = Number(v.abonado) || 0;
       const abonosExtra = abonosPorVenta[v.id] || 0;
@@ -466,8 +295,7 @@ app.get('/api/resumen', async (req, res) => {
       stock += stk;
       capital_en_inventario += cu * stk;
       capital_invertido += cu * compradas;
-      valor_stock_publico +=
-        (Number(p.precio_publico) || 0) * stk;
+      valor_stock_publico += (Number(p.precio_publico) || 0) * stk;
     });
 
     V.forEach(v => {
@@ -479,19 +307,16 @@ app.get('/api/resumen', async (req, res) => {
     });
 
     let costo_de_lo_vendido = 0;
-
     P.forEach(p => {
       const cu = costoUnitario(p);
       const vendidas = vendidasPorPerfume[p.id] || 0;
       costo_de_lo_vendido += cu * vendidas;
     });
 
-    const ganancia_realizada =
-      totalCobradoVentas - costo_de_lo_vendido;
+    const ganancia_realizada = totalCobradoVentas - costo_de_lo_vendido;
 
     const total_a_cobrar = dinero_en_caja + por_cobrar;
-    const valor_potencial_total =
-      total_a_cobrar + valor_stock_publico;
+    const valor_potencial_total = total_a_cobrar + valor_stock_publico;
 
     res.json({
       dinero_en_caja,
@@ -509,92 +334,161 @@ app.get('/api/resumen', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-// ============================================================
-// CLIENTES (agrupados)
-// ============================================================
-app.get('/api/clientes', async (req, res) => {
-  try {
-    const { data: ventas } = await supabase
-      .from('ventas')
-      .select('*, perfumes(nombre), abonos(*)');
 
-    const { data: abonos } = await supabase
-      .from('abonos')
+// ============================================================
+// REPORTE EJECUTIVO (para socios)
+// ============================================================
+app.get('/api/reporte', async (req, res) => {
+  try {
+    const { data: perfumes } = await supabase.from('perfumes').select('*');
+    const { data: ventas } = await supabase.from('ventas').select('*');
+    const { data: abonos } = await supabase.from('abonos').select('*');
+    const { data: fondoMovimientos } = await supabase
+      .from('fondo_movimientos')
       .select('*');
 
+    const P = perfumes || [];
     const V = ventas || [];
-    const A = abonos || [];
 
-    // Agrupar abonos por venta
-    const abonosPorVenta = {};
-    A.forEach(a => {
-      if (a.venta_id) {
-        abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
+    const vendidasPorPerfume = {};
+    V.forEach(v => {
+      if (v.perfume_id) {
+        vendidasPorPerfume[v.perfume_id] =
+          (vendidasPorPerfume[v.perfume_id] || 0) + (Number(v.cantidad) || 0);
       }
     });
 
-    // Agrupar por cliente
-    const clientes = {};
+    const abonosPorVenta = {};
+    (abonos || []).forEach(a => {
+      if (a.venta_id) {
+        abonosPorVenta[a.venta_id] =
+          (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
+      }
+    });
+
+    // Capital invertido (a costo)
+    let capital_invertido = 0;
+    P.forEach(p => {
+      const cu = costoUnitario(p);
+      const compradas = Number(p.piezas_compradas) || 0;
+      capital_invertido += cu * compradas;
+    });
+
+    // Ventas
+    let total_vendido = 0;
+    let total_cobrado = 0;
+    let por_cobrar = 0;
+    let unidades_vendidas = 0;
 
     V.forEach(v => {
-      const nombre = (v.cliente || 'Sin nombre').trim();
-      if (!nombre) return;
-
-      if (!clientes[nombre]) {
-        clientes[nombre] = {
-          nombre,
-          total_perfumes: 0,
-          total_ventas: 0,
-          total_acordado: 0,
-          total_cobrado: 0,
-          total_por_cobrar: 0,
-          primera_compra: v.fecha,
-          ultima_compra: v.fecha,
-          ventas: [],
-          perfumes: []
-        };
-      }
-
-      const c = clientes[nombre];
-      const cantidad = Number(v.cantidad) || 0;
       const total = Number(v.total_venta) || 0;
       const abonadoInicial = Number(v.abonado) || 0;
       const abonosExtra = abonosPorVenta[v.id] || 0;
       const abonado = abonadoInicial + abonosExtra;
       const resto = Math.max(total - abonado, 0);
 
-      c.total_perfumes += cantidad;
-      c.total_ventas += 1;
-      c.total_acordado += total;
-      c.total_cobrado += abonado;
-      c.total_por_cobrar += resto;
-
-      if (v.fecha < c.primera_compra) c.primera_compra = v.fecha;
-      if (v.fecha > c.ultima_compra) c.ultima_compra = v.fecha;
-
-      c.ventas.push({
-        id: v.id,
-        fecha: v.fecha,
-        perfume: v.perfumes?.nombre || '-',
-        cantidad,
-        total,
-        abonado,
-        resto,
-        liquidado: resto <= 0.009,
-        tipo_pago: v.tipo_pago
-      });
-
-      c.perfumes.push(v.perfumes?.nombre || '-');
+      total_vendido += total;
+      total_cobrado += abonado;
+      por_cobrar += resto;
+      unidades_vendidas += Number(v.cantidad) || 0;
     });
 
-    // Convertir a array y ordenar por total de perfumes
-    const lista = Object.values(clientes).sort(
-      (a, b) => b.total_perfumes - a.total_perfumes
+    // Inventario
+    let capital_en_inventario = 0;
+    let valor_stock_publico = 0;
+    let unidades_en_stock = 0;
+
+    P.forEach(p => {
+      const cu = costoUnitario(p);
+      const compradas = Number(p.piezas_compradas) || 0;
+      const vendidas = vendidasPorPerfume[p.id] || 0;
+      const stock = Math.max(compradas - vendidas, 0);
+
+      capital_en_inventario += cu * stock;
+      valor_stock_publico += (Number(p.precio_publico) || 0) * stock;
+      unidades_en_stock += stock;
+    });
+
+    // Costo de lo vendido
+    let costo_de_lo_vendido = 0;
+    P.forEach(p => {
+      const cu = costoUnitario(p);
+      const vendidas = vendidasPorPerfume[p.id] || 0;
+      costo_de_lo_vendido += cu * vendidas;
+    });
+
+    const ganancia_realizada = total_cobrado - costo_de_lo_vendido;
+
+    // Fondo
+    const totalRetiradoFondo = (fondoMovimientos || [])
+      .filter(m => m.tipo === 'retiro')
+      .reduce((sum, m) => sum + Number(m.monto), 0);
+
+    const totalIngresadoFondo = (fondoMovimientos || [])
+      .filter(m => m.tipo === 'ingreso')
+      .reduce((sum, m) => sum + Number(m.monto), 0);
+
+    const dinero_en_caja = Math.max(
+      total_cobrado + totalIngresadoFondo - totalRetiradoFondo,
+      0
     );
 
-    res.json(lista);
+    // Escenarios de cierre
+    const escenario_cierre = {
+      total_a_publico: dinero_en_caja + por_cobrar + valor_stock_publico,
+      total_a_costo: dinero_en_caja + por_cobrar + capital_en_inventario,
+      total_cobrado,
+      por_cobrar,
+      valor_stock_publico,
+      capital_en_inventario,
+    };
+
+    const INVERSION_INICIAL = 6000;
+
+    // ✅ NUEVOS CAMPOS (no restan, solo muestran)
+    const total_negocio = escenario_cierre.total_a_publico;
+    const inversion_inicial_referencia = INVERSION_INICIAL;
+    const ganancia_sobre_inversion = total_negocio - INVERSION_INICIAL;
+    const ganancia_por_socio = ganancia_sobre_inversion / 2;
+
+    res.json({
+      // Números principales
+      inversion_inicial: INVERSION_INICIAL,
+      inversion_inicial_referencia: inversion_inicial_referencia,
+      capital_invertido,
+      capital_en_inventario,
+      valor_stock_publico,
+      total_vendido,
+      total_cobrado,
+      por_cobrar,
+      dinero_en_caja,
+      costo_de_lo_vendido,
+      ganancia_realizada,
+
+      // Unidades
+      unidades_vendidas,
+      unidades_en_stock,
+      total_unidades_compradas: unidades_vendidas + unidades_en_stock,
+
+      // Escenarios de cierre
+      escenario_cierre,
+
+      // ✅ Total del negocio y ganancia
+      total_negocio,
+      ganancia_sobre_inversion,
+      ganancia_por_socio,
+
+      // Porcentaje de rentabilidad
+      rentabilidad: INVERSION_INICIAL > 0
+        ? ((ganancia_sobre_inversion / INVERSION_INICIAL) * 100).toFixed(2)
+        : 0,
+
+      // Fondo
+      total_retirado_fondo: totalRetiradoFondo,
+      total_ingresado_fondo: totalIngresadoFondo,
+    });
   } catch (error) {
-    console.error('Error en /api/clientes:', error);
+    console.error('Error en /api/reporte:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -612,9 +506,7 @@ app.get('/api/perfumes', async (req, res) => {
     return res.status(400).json({ error: error.message });
   }
 
-  const { data: ventas } = await supabase
-    .from('ventas')
-    .select('*');
+  const { data: ventas } = await supabase.from('ventas').select('*');
 
   const vendPor = {};
   const cobPor = {};
@@ -811,9 +703,7 @@ app.get('/api/ventas', async (req, res) => {
     const abonadoTotal = abonoInicial + abonosExtra;
     const resto = Math.max(total - abonadoTotal, 0);
     const pct_pagado =
-      total > 0
-        ? Math.round((abonadoTotal / total) * 100)
-        : 0;
+      total > 0 ? Math.round((abonadoTotal / total) * 100) : 0;
     const liquidado = resto <= 0 && total > 0;
 
     return {
@@ -1119,20 +1009,13 @@ app.post('/api/fondo/movimientos', async (req, res) => {
   }
 
   if (tipo === 'retiro') {
-    const { data: ventas } = await supabase
-      .from('ventas')
-      .select('*');
-
-    const { data: abonos } = await supabase
-      .from('abonos')
-      .select('*');
-
+    const { data: ventas } = await supabase.from('ventas').select('*');
+    const { data: abonos } = await supabase.from('abonos').select('*');
     const { data: fondoMovs } = await supabase
       .from('fondo_movimientos')
       .select('*');
 
     const abonosPorVenta = {};
-
     (abonos || []).forEach(a => {
       if (a.venta_id) {
         abonosPorVenta[a.venta_id] =
@@ -1141,7 +1024,6 @@ app.post('/api/fondo/movimientos', async (req, res) => {
     });
 
     let totalCobrado = 0;
-
     (ventas || []).forEach(v => {
       const abonadoInicial = Number(v.abonado) || 0;
       const abonosExtra = abonosPorVenta[v.id] || 0;
@@ -1156,8 +1038,7 @@ app.post('/api/fondo/movimientos', async (req, res) => {
       .filter(m => m.tipo === 'ingreso')
       .reduce((sum, m) => sum + Number(m.monto), 0);
 
-    const disponible =
-      totalCobrado + totalIngresado - totalRetirado;
+    const disponible = totalCobrado + totalIngresado - totalRetirado;
 
     if (Number(monto) > disponible) {
       return res.status(400).json({
@@ -1210,25 +1091,14 @@ app.put('/api/fondo/movimientos/:id', async (req, res) => {
     .eq('id', id)
     .single();
 
-  if (
-    original &&
-    original.tipo === 'retiro' &&
-    tipo === 'retiro'
-  ) {
-    const { data: ventas } = await supabase
-      .from('ventas')
-      .select('*');
-
-    const { data: abonos } = await supabase
-      .from('abonos')
-      .select('*');
-
+  if (original && original.tipo === 'retiro' && tipo === 'retiro') {
+    const { data: ventas } = await supabase.from('ventas').select('*');
+    const { data: abonos } = await supabase.from('abonos').select('*');
     const { data: fondoMovs } = await supabase
       .from('fondo_movimientos')
       .select('*');
 
     const abonosPorVenta = {};
-
     (abonos || []).forEach(a => {
       if (a.venta_id) {
         abonosPorVenta[a.venta_id] =
@@ -1237,7 +1107,6 @@ app.put('/api/fondo/movimientos/:id', async (req, res) => {
     });
 
     let totalCobrado = 0;
-
     (ventas || []).forEach(v => {
       const abonadoInicial = Number(v.abonado) || 0;
       const abonosExtra = abonosPorVenta[v.id] || 0;
@@ -1252,8 +1121,7 @@ app.put('/api/fondo/movimientos/:id', async (req, res) => {
       .filter(m => m.tipo === 'ingreso')
       .reduce((sum, m) => sum + Number(m.monto), 0);
 
-    const disponible =
-      totalCobrado + totalIngresado - totalRetirado;
+    const disponible = totalCobrado + totalIngresado - totalRetirado;
 
     if (Number(monto) > disponible) {
       return res.status(400).json({
@@ -1317,6 +1185,218 @@ app.delete('/api/fondo/movimientos/:id', async (req, res) => {
     antes,
     null,
     `Movimiento de fondo eliminado: ${antes?.concepto || id} - $${antes?.monto || 0}`
+  );
+
+  res.json({ ok: true });
+});
+
+// ============================================================
+// CLIENTES
+// ============================================================
+app.get('/api/clientes', async (req, res) => {
+  try {
+    const { data: ventas } = await supabase
+      .from('ventas')
+      .select('*, perfumes(nombre), abonos(*)');
+
+    const { data: abonos } = await supabase.from('abonos').select('*');
+
+    const V = ventas || [];
+    const A = abonos || [];
+
+    const abonosPorVenta = {};
+    A.forEach(a => {
+      if (a.venta_id) {
+        abonosPorVenta[a.venta_id] =
+          (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
+      }
+    });
+
+    const clientes = {};
+
+    V.forEach(v => {
+      const nombre = (v.cliente || 'Sin nombre').trim();
+      if (!nombre) return;
+
+      if (!clientes[nombre]) {
+        clientes[nombre] = {
+          nombre,
+          total_perfumes: 0,
+          total_ventas: 0,
+          total_acordado: 0,
+          total_cobrado: 0,
+          total_por_cobrar: 0,
+          primera_compra: v.fecha,
+          ultima_compra: v.fecha,
+          ventas: [],
+        };
+      }
+
+      const c = clientes[nombre];
+      const cantidad = Number(v.cantidad) || 0;
+      const total = Number(v.total_venta) || 0;
+      const abonadoInicial = Number(v.abonado) || 0;
+      const abonosExtra = abonosPorVenta[v.id] || 0;
+      const abonado = abonadoInicial + abonosExtra;
+      const resto = Math.max(total - abonado, 0);
+
+      c.total_perfumes += cantidad;
+      c.total_ventas += 1;
+      c.total_acordado += total;
+      c.total_cobrado += abonado;
+      c.total_por_cobrar += resto;
+
+      if (v.fecha < c.primera_compra) c.primera_compra = v.fecha;
+      if (v.fecha > c.ultima_compra) c.ultima_compra = v.fecha;
+
+      c.ventas.push({
+        id: v.id,
+        fecha: v.fecha,
+        perfume: v.perfumes?.nombre || '-',
+        cantidad,
+        total,
+        abonado,
+        resto,
+        liquidado: resto <= 0.009,
+        tipo_pago: v.tipo_pago,
+      });
+    });
+
+    const lista = Object.values(clientes).sort(
+      (a, b) => b.total_perfumes - a.total_perfumes
+    );
+
+    res.json(lista);
+  } catch (error) {
+    console.error('Error en /api/clientes:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// LOGS
+// ============================================================
+app.get('/api/logs', async (req, res) => {
+  const { tabla, accion, limite, desde } = req.query;
+
+  let query = supabase
+    .from('logs')
+    .select('*')
+    .order('creado_en', { ascending: false })
+    .limit(Number(limite) || 200);
+
+  if (tabla) query = query.eq('tabla', tabla);
+  if (accion) query = query.eq('accion', accion);
+  if (desde) query = query.gte('creado_en', desde);
+
+  const { data, error } = await query;
+
+  if (error) {
+    return res.status(400).json({ error: error.message });
+  }
+
+  res.json(data);
+});
+
+// ============================================================
+// USUARIOS (listar, crear, eliminar)
+// ============================================================
+app.get('/api/usuarios', async (req, res) => {
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select('id, username, creado_en')
+    .order('id');
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+app.post('/api/usuarios', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({
+        error: 'Usuario y contraseña requeridos',
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        error: 'La contraseña debe tener al menos 6 caracteres',
+      });
+    }
+
+    const { data: existing } = await supabase
+      .from('usuarios')
+      .select('id')
+      .eq('username', username)
+      .maybeSingle();
+
+    if (existing) {
+      return res.status(400).json({ error: 'Ese usuario ya existe' });
+    }
+
+    const hash = bcrypt.hashSync(password, 10);
+
+    const { data, error } = await supabase
+      .from('usuarios')
+      .insert({
+        username,
+        password_hash: hash,
+      })
+      .select();
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    await guardarLog(
+      req,
+      'CREAR',
+      'usuarios',
+      data[0].id,
+      null,
+      { username },
+      `Usuario creado: ${username}`
+    );
+
+    res.json({ id: data[0].id, username });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/usuarios/:id', async (req, res) => {
+  const { id } = req.params;
+
+  const { data: usuario } = await supabase
+    .from('usuarios')
+    .select('username')
+    .eq('id', id)
+    .single();
+
+  if (usuario?.username === 'admin') {
+    return res.status(400).json({
+      error: 'No puedes eliminar el admin principal',
+    });
+  }
+
+  const { error } = await supabase
+    .from('usuarios')
+    .delete()
+    .eq('id', id);
+
+  if (error) return res.status(400).json({ error: error.message });
+
+  await guardarLog(
+    req,
+    'ELIMINAR',
+    'usuarios',
+    Number(id),
+    usuario,
+    null,
+    `Usuario eliminado: ${usuario?.username}`
   );
 
   res.json({ ok: true });
@@ -1510,31 +1590,6 @@ app.delete('/api/ahorro/movimientos/:id', async (req, res) => {
 });
 
 // ============================================================
-// LOGS (GET) — consultar historial de actividad
-// ============================================================
-app.get('/api/logs', async (req, res) => {
-  const { tabla, accion, limite, desde } = req.query;
-
-  let query = supabase
-    .from('logs')
-    .select('*')
-    .order('creado_en', { ascending: false })
-    .limit(Number(limite) || 200);
-
-  if (tabla) query = query.eq('tabla', tabla);
-  if (accion) query = query.eq('accion', accion);
-  if (desde) query = query.gte('creado_en', desde);
-
-  const { data, error } = await query;
-
-  if (error) {
-    return res.status(400).json({ error: error.message });
-  }
-
-  res.json(data);
-});
-
-// ============================================================
 // SERVIDOR FRONTEND
 // ============================================================
 const distPath = path.join(__dirname, '../frontend/dist');
@@ -1560,8 +1615,6 @@ if (fs.existsSync(distPath)) {
 // ============================================================
 app.listen(PORT, '0.0.0.0', () => {
   console.log('Servidor corriendo en puerto ' + PORT);
-  console.log(
-    'Modo: ' + (process.env.NODE_ENV || 'development')
-  );
+  console.log('Modo: ' + (process.env.NODE_ENV || 'development'));
   console.log('Conectado a Supabase: ' + supabaseUrl);
 });
