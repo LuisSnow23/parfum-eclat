@@ -78,6 +78,169 @@ function obtenerIP(req) {
 }
 
 // ============================================================
+// REPORTE EJECUTIVO (para socios)
+// ============================================================
+app.get('/api/reporte', async (req, res) => {
+  try {
+    const { data: perfumes } = await supabase.from('perfumes').select('*');
+    const { data: ventas } = await supabase.from('ventas').select('*');
+    const { data: abonos } = await supabase.from('abonos').select('*');
+    const { data: fondoMovimientos } = await supabase.from('fondo_movimientos').select('*');
+
+    const P = perfumes || [];
+    const V = ventas || [];
+
+    // ---- Ventas por perfume ----
+    const vendidasPorPerfume = {};
+    V.forEach(v => {
+      if (v.perfume_id) {
+        vendidasPorPerfume[v.perfume_id] =
+          (vendidasPorPerfume[v.perfume_id] || 0) + (Number(v.cantidad) || 0);
+      }
+    });
+
+    // ---- Abonos por venta ----
+    const abonosPorVenta = {};
+    (abonos || []).forEach(a => {
+      if (a.venta_id) {
+        abonosPorVenta[a.venta_id] = (abonosPorVenta[a.venta_id] || 0) + Number(a.monto);
+      }
+    });
+
+    // ---- Capital invertido (a costo, TODOS los perfumes comprados) ----
+    let capital_invertido = 0;
+    P.forEach(p => {
+      const cu = costoUnitario(p);
+      const compradas = Number(p.piezas_compradas) || 0;
+      capital_invertido += cu * compradas;
+    });
+
+    // ---- Ventas totales (a precio público) ----
+    let total_vendido = 0;
+    let total_cobrado = 0;
+    let por_cobrar = 0;
+    let unidades_vendidas = 0;
+
+    V.forEach(v => {
+      const total = Number(v.total_venta) || 0;
+      const abonadoInicial = Number(v.abonado) || 0;
+      const abonosExtra = abonosPorVenta[v.id] || 0;
+      const abonado = abonadoInicial + abonosExtra;
+      const resto = Math.max(total - abonado, 0);
+
+      total_vendido += total;
+      total_cobrado += abonado;
+      por_cobrar += resto;
+      unidades_vendidas += Number(v.cantidad) || 0;
+    });
+
+    // ---- Capital en inventario (a costo, solo lo no vendido) ----
+    let capital_en_inventario = 0;
+    let valor_stock_publico = 0;
+    let unidades_en_stock = 0;
+
+    P.forEach(p => {
+      const cu = costoUnitario(p);
+      const compradas = Number(p.piezas_compradas) || 0;
+      const vendidas = vendidasPorPerfume[p.id] || 0;
+      const stock = Math.max(compradas - vendidas, 0);
+
+      capital_en_inventario += cu * stock;
+      valor_stock_publico += (Number(p.precio_publico) || 0) * stock;
+      unidades_en_stock += stock;
+    });
+
+    // ---- Costo de lo vendido ----
+    let costo_de_lo_vendido = 0;
+    P.forEach(p => {
+      const cu = costoUnitario(p);
+      const vendidas = vendidasPorPerfume[p.id] || 0;
+      costo_de_lo_vendido += cu * vendidas;
+    });
+
+    // ---- Ganancia realizada ----
+    const ganancia_realizada = total_cobrado - costo_de_lo_vendido;
+
+    // ---- Dinero en caja ----
+    const totalRetiradoFondo = (fondoMovimientos || [])
+      .filter(m => m.tipo === 'retiro')
+      .reduce((sum, m) => sum + Number(m.monto), 0);
+
+    const totalIngresadoFondo = (fondoMovimientos || [])
+      .filter(m => m.tipo === 'ingreso')
+      .reduce((sum, m) => sum + Number(m.monto), 0);
+
+    const dinero_en_caja = Math.max(
+      total_cobrado + totalIngresadoFondo - totalRetiradoFondo,
+      0
+    );
+
+    // ---- Escenario: ¿qué pasa si cierran HOY? ----
+    const escenario_cierre = {
+      // Cobrar TODO y vender TODO el stock
+      total_a_publico: dinero_en_caja + por_cobrar + valor_stock_publico,
+      // Cobrar TODO y vender el stock a costo
+      total_a_costo: dinero_en_caja + por_cobrar + capital_en_inventario,
+      // Lo que ya se cobró
+      total_cobrado,
+      // Lo que falta por cobrar
+      por_cobrar,
+      // Valor del stock a precio público
+      valor_stock_publico,
+      // Valor del stock a costo
+      capital_en_inventario,
+    };
+
+    // ---- Inversión inicial de socios ----
+    const INVERSION_INICIAL = 6000; // 3000 de cada uno
+
+    // ---- Utilidad sobre inversión inicial ----
+    const utilidad_total = escenario_cierre.total_a_publico - INVERSION_INICIAL;
+    const utilidad_total_costo = escenario_cierre.total_a_costo - INVERSION_INICIAL;
+
+    res.json({
+      // Números principales para el socio
+      inversion_inicial: INVERSION_INICIAL,
+      capital_invertido,
+      capital_en_inventario,
+      valor_stock_publico,
+      total_vendido,
+      total_cobrado,
+      por_cobrar,
+      dinero_en_caja,
+      costo_de_lo_vendido,
+      ganancia_realizada,
+
+      // Unidades
+      unidades_vendidas,
+      unidades_en_stock,
+      total_unidades_compradas: unidades_vendidas + unidades_en_stock,
+
+      // Escenarios de cierre
+      escenario_cierre,
+
+      // Utilidad
+      utilidad_total,
+      utilidad_total_costo,
+      ganancia_por_socio: utilidad_total / 2,
+      ganancia_por_socio_costo: utilidad_total_costo / 2,
+
+      // Porcentaje de rentabilidad
+      rentabilidad: INVERSION_INICIAL > 0
+        ? ((utilidad_total / INVERSION_INICIAL) * 100).toFixed(2)
+        : 0,
+
+      // Totales del fondo
+      total_retirado_fondo: totalRetiradoFondo,
+      total_ingresado_fondo: totalIngresadoFondo,
+    });
+  } catch (error) {
+    console.error('Error en /api/reporte:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
 // OBTENER UBICACION POR IP (ciudad, región, país)
 // ============================================================
 async function obtenerUbicacionIP(ip) {

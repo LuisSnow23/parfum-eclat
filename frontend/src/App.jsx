@@ -8,6 +8,7 @@ import Fondo from './pages/Fondo';
 import Clientes from './pages/Clientes';
 import { Users } from 'lucide-react';
 import logo from './assets/logo-pe.jpeg';
+import Reporte from './pages/Reporte';
 
 function Sidebar() {
   return (
@@ -46,6 +47,13 @@ function Sidebar() {
           <Users size={16} />
           <span>Clientes</span>
         </NavLink>
+        <NavLink
+            to="/reporte"
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+        >
+            <BarChart3 size={16} />
+            <span>Reporte</span>
+          </NavLink>
 
         <div className="nav-item" style={{ cursor: 'pointer', marginTop: 'auto' }} onClick={() => {
           localStorage.removeItem('token');
@@ -83,6 +91,7 @@ export default function App() {
             <Route path="/ahorro" element={<Ahorro />} />
             <Route path="/fondo" element={<Fondo />} />
             <Route path="/clientes" element={<Clientes />} />
+            <Route path="/reporte" element={<Reporte />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </main>
