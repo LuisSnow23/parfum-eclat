@@ -1258,7 +1258,7 @@ details.info-card[open] summary::before { transform: rotate(90deg); }
    AHORRO — Card de meta + mini cards
    ═══════════════════════════════════════════════════════════ */
 
-/* Card de meta: layout en 2 columnas que se apila en móvil */
+/* Busca esto en tu CSS y REEMPLÁZALO por lo de abajo */
 .meta-header {
   display: flex;
   justify-content: space-between;
@@ -1270,76 +1270,31 @@ details.info-card[open] summary::before { transform: rotate(90deg); }
 .meta-header > div:first-child { flex: 1 1 220px; min-width: 0; }
 .meta-right { text-align: right; flex: 0 0 auto; }
 
-.meta-value {
-  font-family: var(--font-display);
-  font-weight: 300;
-  line-height: 1.1;
-  margin-top: 4px;
-  letter-spacing: 0.02em;
-}
-.meta-value.gold  { color: var(--gold, #c9a84c); font-size: 2.4rem; }
-.meta-value.green { color: #6dbd9a; font-size: 2rem; }
-
-.meta-desc {
-  font-size: 0.8rem;
-  color: var(--cream-dim, var(--gray-dim));
-  margin-top: 6px;
-  font-style: italic;
-}
-.meta-pct {
-  font-size: 0.75rem;
-  color: var(--cream-dim, var(--gray-dim));
-  margin-top: 4px;
-}
-
-/* Grid de 3 mini-cards (días / semana / falta) */
-.mini-grid {
+/* ── NUEVO CÓDIGO CORREGIDO ── */
+.meta-header {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  margin-bottom: 20px;
+  align-items: start;
 }
-.mini-card {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
-  padding: 12px 14px;
-  min-width: 0;
-}
-.mini-card-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--cream-dim, var(--gray-dim));
-  margin-bottom: 5px;
-  line-height: 1.2;
-}
-.mini-card-value {
-  font-family: var(--font-display);
-  font-size: 1.1rem;
-  font-weight: 300;
-  color: var(--cream, var(--white-soft));
-  word-break: break-word;
-}
-.mini-card-value.gold {
-  color: var(--gold, #c9a84c);
-  font-size: 1.35rem;
-  font-weight: 400;
+.meta-right {
+  text-align: right;
 }
 
-/* Ajustes responsive */
+/* Y en el @media (max-width: 768px), actualiza el .meta-header: */
 @media (max-width: 768px) {
-  .meta-value.gold  { font-size: 2rem; }
-  .meta-value.green { font-size: 1.6rem; }
-
   .meta-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
+    grid-template-columns: 1fr; /* Una sola columna */
+    gap: 10px;
+    margin-bottom: 16px;
   }
   .meta-right {
     text-align: left;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
     padding-top: 12px;
   }
+}
 
   .mini-grid {
     grid-template-columns: repeat(3, 1fr);
@@ -1352,7 +1307,6 @@ details.info-card[open] summary::before { transform: rotate(90deg); }
     font-size: 0.55rem;
     letter-spacing: 0.08em;
   }
-}
 
 @media (max-width: 480px) {
   .meta-value.gold  { font-size: 1.75rem; }
