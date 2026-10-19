@@ -1,5 +1,14 @@
-import { useState, useEffect } from 'react'
-import { Plus, X, Trash2, PiggyBank, Target, TrendingUp, Calendar, Pencil } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import {
+  Plus,
+  X,
+  Trash2,
+  PiggyBank,
+  Target,
+  TrendingUp,
+  Calendar,
+  Pencil,
+} from 'lucide-react'
 import { api, fmt, fmtDate } from '../api'
 
 const hoy = new Date().toISOString().split('T')[0]
@@ -15,15 +24,21 @@ function semanasHastaDict() {
   return Math.ceil(diasHastaDict() / 7)
 }
 
+const emptyMov = {
+  tipo: 'deposito',
+  monto: '',
+  descripcion: '',
+  fecha: hoy,
+}
+
 export default function Ahorro() {
   const [config, setConfig] = useState(null)
   const [movimientos, setMovimientos] = useState([])
   const [showConfig, setShowConfig] = useState(false)
   const [showMovimiento, setShowMovimiento] = useState(false)
   const [configForm, setConfigForm] = useState({ meta: '', descripcion: '' })
-  const [movForm, setMovForm] = useState({ tipo: 'deposito', monto: '', descripcion: '', fecha: hoy })
+  const [movForm, setMovForm] = useState(emptyMov)
   const [editMovId, setEditMovId] = useState(null)
-  const [editMovForm, setEditMovForm] = useState({ tipo: 'deposito', monto: '', descripcion: '', fecha: hoy })
 
   const load = async () => {
     try {
@@ -41,11 +56,12 @@ export default function Ahorro() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+  }, [])
 
   const sc = (k, v) => setConfigForm(f => ({ ...f, [k]: v }))
   const sm = (k, v) => setMovForm(f => ({ ...f, [k]: v }))
-  const sem = (k, v) => setEditMovForm(f => ({ ...f, [k]: v }))
 
   const guardarConfig = async () => {
     if (!configForm.meta) return
@@ -54,9 +70,15 @@ export default function Ahorro() {
     setShowConfig(false)
   }
 
-  const openEditMovimiento = (m) => {
+  const cerrarMovModal = () => {
+    setShowMovimiento(false)
+    setEditMovId(null)
+    setMovForm(emptyMov)
+  }
+
+  const openEditMovimiento = m => {
     setEditMovId(m.id)
-    setEditMovForm({
+    setMovForm({
       tipo: m.tipo || 'deposito',
       monto: m.monto ?? '',
       descripcion: m.descripcion || '',
@@ -65,37 +87,50 @@ export default function Ahorro() {
     setShowMovimiento(true)
   }
 
-  const agregarMovimiento = async () => {
-    if (!movForm.monto) return
-    await api.post('/ahorro/movimientos', movForm)
-    await load()
-    setShowMovimiento(false)
-    setMovForm({ tipo: 'deposito', monto: '', descripcion: '', fecha: hoy })
-  }
-
-  const editarMovimiento = async () => {
-    if (!editMovForm.monto) return
-    await api.put(`/ahorro/movimientos/${editMovId}`, editMovForm)
-    await load()
-    setShowMovimiento(false)
+  const openNuevoMovimiento = () => {
     setEditMovId(null)
-    setEditMovForm({ tipo: 'deposito', monto: '', descripcion: '', fecha: hoy })
+    setMovForm(emptyMov)
+    setShowMovimiento(true)
   }
 
-  const eliminarMov = async (id) => {
-    if (!confirm('Eliminar este movimiento?')) return
+  const guardarMovimiento = async () => {
+    if (!movForm.monto) return
+    if (editMovId) {
+      await api.put(`/ahorro/movimientos/${editMovId}`, movForm)
+    } else {
+      await api.post('/ahorro/movimientos', movForm)
+    }
+    await load()
+    cerrarMovModal()
+  }
+
+  const eliminarMov = async id => {
+    if (!confirm('¿Eliminar este movimiento?')) return
     await api.delete(`/ahorro/movimientos/${id}`)
     load()
   }
 
-  const totalAhorrado = movimientos
-    .filter(m => m.tipo === 'deposito')
-    .reduce((s, m) => s + m.monto, 0)
-  const totalRetirado = movimientos
-    .filter(m => m.tipo === 'retiro')
-    .reduce((s, m) => s + m.monto, 0)
-  const saldo = totalAhorrado - totalRetirado
-  const meta = config?.meta || 0
+  // ── Cálculos derivados ──
+  const { totalAhorrado, totalRetirado, saldo, saldoPorId } = useMemo(() => {
+    const ta = movimientos
+      .filter(m => m.tipo === 'deposito')
+      .reduce((s, m) => s + Number(m.monto), 0)
+    const tr = movimientos
+      .filter(m => m.tipo === 'retiro')
+      .reduce((s, m) => s + Number(m.monto), 0)
+
+    // Saldo acumulado por id (calculado una sola vez, O(n))
+    const map = {}
+    let acc = 0
+    movimientos.forEach(m => {
+      acc += m.tipo === 'deposito' ? Number(m.monto) : -Number(m.monto)
+      map[m.id] = acc
+    })
+
+    return { totalAhorrado: ta, totalRetirado: tr, saldo: ta - tr, saldoPorId: map }
+  }, [movimientos])
+
+  const meta = Number(config?.meta) || 0
   const progreso = meta > 0 ? Math.min(100, Math.round((saldo / meta) * 100)) : 0
   const falta = Math.max(0, meta - saldo)
   const dias = diasHastaDict()
@@ -105,19 +140,23 @@ export default function Ahorro() {
 
   return (
     <div>
+      {/* ───────── HEADER ───────── */}
       <div className="page-header">
         <div>
           <div className="ornament">* * *</div>
           <h1 className="page-title" style={{ marginTop: 8 }}>
             Ahorro <span>Diciembre</span>
           </h1>
-          <div className="label" style={{ marginTop: 6 }}>Seguimiento de tu meta de ahorro  {dias} dias restantes</div>
+          <div className="label" style={{ marginTop: 6 }}>
+            Seguimiento de tu meta de ahorro · {dias} días restantes
+          </div>
         </div>
-        <div className="flex gap-2">
+
+        <div className="header-actions">
           <button className="btn btn-outline" onClick={() => setShowConfig(true)}>
             <Target size={13} /> {config ? 'Editar Meta' : 'Establecer Meta'}
           </button>
-          <button className="btn btn-gold" onClick={() => { setEditMovId(null); setMovForm({ tipo: 'deposito', monto: '', descripcion: '', fecha: hoy }); setShowMovimiento(true) }}>
+          <button className="btn btn-gold" onClick={openNuevoMovimiento}>
             <Plus size={14} /> Registrar Movimiento
           </button>
         </div>
@@ -126,9 +165,9 @@ export default function Ahorro() {
       {!config ? (
         <div className="card">
           <div className="empty-state">
-            <div style={{ fontSize: '2.5rem', marginBottom: 14 }}>P</div>
+            <PiggyBank size={32} style={{ opacity: 0.4, marginBottom: 12 }} />
             <div className="section-title">Establece tu meta de ahorro</div>
-            <p>Define cuanto quieres ahorrar antes de que termine el ano.</p>
+            <p>Define cuánto quieres ahorrar antes de que termine el año.</p>
             <button className="btn btn-gold" style={{ marginTop: 16 }} onClick={() => setShowConfig(true)}>
               <Target size={14} /> Establecer Meta
             </button>
@@ -136,25 +175,21 @@ export default function Ahorro() {
         </div>
       ) : (
         <>
-          <div className="card card-gold" style={{ marginBottom: 24, padding: '28px 32px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+          {/* ───────── CARD META ───────── */}
+          <div className="card card-gold" style={{ marginBottom: 24, padding: '24px 28px' }}>
+            <div className="meta-header">
               <div>
                 <div className="label">Meta de ahorro</div>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: '2.6rem', fontWeight: 300, color: 'var(--gold)', lineHeight: 1.1, marginTop: 4 }}>
-                  {fmt(meta)}
-                </div>
+                <div className="meta-value gold">{fmt(meta)}</div>
                 {config.descripcion && (
-                  <div style={{ fontSize: '0.8rem', color: 'var(--cream-dim)', marginTop: 6, fontStyle: 'italic' }}>
-                    "{config.descripcion}"
-                  </div>
+                  <div className="meta-desc">"{config.descripcion}"</div>
                 )}
               </div>
-              <div style={{ textAlign: 'right' }}>
+
+              <div className="meta-right">
                 <div className="label">Saldo actual</div>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: '2.2rem', fontWeight: 300, color: '#6dbd9a', lineHeight: 1.1, marginTop: 4 }}>
-                  {fmt(saldo)}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--cream-dim)', marginTop: 4 }}>{progreso}% completado</div>
+                <div className="meta-value green">{fmt(saldo)}</div>
+                <div className="meta-pct">{progreso}% completado</div>
               </div>
             </div>
 
@@ -163,91 +198,95 @@ export default function Ahorro() {
             </div>
 
             {falta > 0 ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-                <MiniInfo icon={<Calendar size={13} />} label="Dias restantes" value={`${dias} dias`} />
+              <div className="mini-grid">
+                <MiniInfo icon={<Calendar size={13} />} label="Días restantes" value={`${dias} días`} />
                 <MiniInfo icon={<TrendingUp size={13} />} label="Ahorra por semana" value={fmt(porSemana)} highlight />
                 <MiniInfo icon={<PiggyBank size={13} />} label="Falta para la meta" value={fmt(falta)} />
               </div>
             ) : (
               <div style={{ textAlign: 'center', padding: '8px 0' }}>
                 <span className="badge badge-green" style={{ fontSize: '0.85rem', padding: '6px 18px' }}>
-                  Meta alcanzada!
+                  ¡Meta alcanzada!
                 </span>
               </div>
             )}
           </div>
 
-          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 28 }}>
+          {/* ───────── KPIs ───────── */}
+          <div className="stats-grid">
             <div className="stat-card">
               <div className="label">Total depositado</div>
-              <div className="stat-value green">{fmt(totalAhorrado)}</div>
+              <div className="stat-value" style={{ color: '#6dbf8c' }}>{fmt(totalAhorrado)}</div>
             </div>
             <div className="stat-card">
               <div className="label">Total retirado</div>
-              <div className="stat-value red">{fmt(totalRetirado)}</div>
+              <div className="stat-value" style={{ color: '#e07a7a' }}>{fmt(totalRetirado)}</div>
             </div>
             <div className="stat-card">
-              <div className="label">Ahorro por dia (para meta)</div>
-              <div className="stat-value gold">{fmt(porDia)}</div>
+              <div className="label">Ahorro por día (para meta)</div>
+              <div className="stat-value" style={{ color: '#c9a84c' }}>{fmt(porDia)}</div>
             </div>
           </div>
 
-          <div>
-            <div className="flex-between" style={{ marginBottom: 14 }}>
+          {/* ───────── MOVIMIENTOS ───────── */}
+          <div className="card">
+            <div className="section-title-row">
               <span className="section-title">Movimientos</span>
-              <button className="btn btn-outline btn-sm" onClick={() => { setEditMovId(null); setMovForm({ tipo: 'deposito', monto: '', descripcion: '', fecha: hoy }); setShowMovimiento(true) }}>
+              <button className="btn btn-outline btn-sm" onClick={openNuevoMovimiento}>
                 <Plus size={12} /> Agregar
               </button>
             </div>
 
             {movimientos.length === 0 ? (
-              <div className="card">
-                <div className="empty-state">
-                  <p>Sin movimientos. Empieza a registrar tus ahorros!</p>
-                </div>
+              <div className="empty-state">
+                <p>Sin movimientos. ¡Empieza a registrar tus ahorros!</p>
               </div>
             ) : (
-              <div className="table-wrap">
-                <table>
+              <div className="table-wrap table-stack-wrap">
+                <table className="data-table stack-table">
                   <thead>
                     <tr>
                       <th>Fecha</th>
                       <th>Tipo</th>
-                      <th>Descripcion</th>
+                      <th>Descripción</th>
                       <th>Monto</th>
                       <th>Saldo acumulado</th>
                       <th></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {movimientos.map((m, i) => {
-                      const ordenados = [...movimientos].reverse()
-                      const idx = ordenados.findIndex(x => x.id === m.id)
-                      const saldoAcum = ordenados.slice(0, idx + 1).reduce((s, x) => s + (x.tipo === 'deposito' ? x.monto : -x.monto), 0)
-                      return (
-                        <tr key={m.id}>
-                          <td className="td-muted">{fmtDate(m.fecha)}</td>
-                          <td>
-                            <span className={`badge ${m.tipo === 'deposito' ? 'badge-green' : 'badge-red'}`}>
-                              {m.tipo === 'deposito' ? 'Deposito' : 'Retiro'}
-                            </span>
-                          </td>
-                          <td style={{ color: 'var(--cream)' }}>{m.descripcion || '-'}</td>
-                          <td className={m.tipo === 'deposito' ? 'td-green' : 'td-red'}>
-                            {m.tipo === 'deposito' ? '+' : '-'}{fmt(m.monto)}
-                          </td>
-                          <td className="td-gold">{fmt(saldoAcum)}</td>
-                          <td style={{ whiteSpace: 'nowrap' }}>
-                            <button className="btn-icon" title="Editar" onClick={() => openEditMovimiento(m)}>
-                              <Pencil size={14} />
-                            </button>
-                            <button className="btn-icon" title="Eliminar" onClick={() => eliminarMov(m.id)}>
-                              <Trash2 size={12} />
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
+                    {movimientos.map(m => (
+                      <tr key={m.id}>
+                        <td data-label="Fecha">{fmtDate(m.fecha)}</td>
+
+                        <td data-label="Tipo">
+                          <span className={`badge ${m.tipo === 'deposito' ? 'badge-green' : 'badge-red'}`}>
+                            {m.tipo === 'deposito' ? 'Depósito' : 'Retiro'}
+                          </span>
+                        </td>
+
+                        <td className="cell-title" data-label="Descripción">
+                          {m.descripcion || '—'}
+                        </td>
+
+                        <td className={m.tipo === 'deposito' ? 'td-green' : 'td-red'} data-label="Monto">
+                          {m.tipo === 'deposito' ? '+' : '−'}{fmt(m.monto)}
+                        </td>
+
+                        <td className="td-gold" data-label="Saldo acumulado">
+                          {fmt(saldoPorId[m.id] || 0)}
+                        </td>
+
+                        <td className="cell-actions">
+                          <button className="btn-icon" title="Editar" onClick={() => openEditMovimiento(m)}>
+                            <Pencil size={14} />
+                          </button>
+                          <button className="btn-icon" title="Eliminar" onClick={() => eliminarMov(m.id)}>
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -256,18 +295,23 @@ export default function Ahorro() {
         </>
       )}
 
+      {/* ───────── MODAL CONFIG ───────── */}
       {showConfig && (
         <div className="modal-overlay" onClick={() => setShowConfig(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-title">Meta de Ahorro</div>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowConfig(false)}><X size={16} /></button>
+              <button className="btn-icon" onClick={() => setShowConfig(false)} aria-label="Cerrar">
+                <X size={16} />
+              </button>
             </div>
+
             <div className="modal-body">
               <div className="form-group">
-                <label className="form-label">Cuanto quieres ahorrar antes del 31 de diciembre? ($)</label>
+                <label className="form-label">¿Cuánto quieres ahorrar antes del 31 de diciembre? ($)</label>
                 <input
                   type="number"
+                  inputMode="decimal"
                   className="form-input"
                   placeholder="Ej: 10000"
                   value={configForm.meta}
@@ -275,21 +319,27 @@ export default function Ahorro() {
                   autoFocus
                 />
               </div>
+
               <div className="form-group">
-                <label className="form-label">Para que es este ahorro? (opcional)</label>
+                <label className="form-label">¿Para qué es este ahorro? (opcional)</label>
                 <input
                   className="form-input"
-                  placeholder="Ej: Reinversion de perfumes, viaje, etc."
+                  placeholder="Ej: Reinversión de perfumes, viaje, etc."
                   value={configForm.descripcion}
                   onChange={e => sc('descripcion', e.target.value)}
                 />
               </div>
+
               {configForm.meta > 0 && (
                 <div className="alert alert-info">
-                  Para lograrlo necesitas ahorrar aprox. <strong>{fmt(Math.ceil(configForm.meta / semanasHastaDict()))}/semana</strong> o <strong>{fmt(Math.ceil(configForm.meta / diasHastaDict()))}/dia</strong> los proximos {dias} dias.
+                  Para lograrlo necesitas ahorrar aprox.{' '}
+                  <strong>{fmt(Math.ceil(configForm.meta / semanasHastaDict()))}/semana</strong> o{' '}
+                  <strong>{fmt(Math.ceil(configForm.meta / diasHastaDict()))}/día</strong> en los
+                  próximos {dias} días.
                 </div>
               )}
             </div>
+
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowConfig(false)}>Cancelar</button>
               <button className="btn btn-gold" onClick={guardarConfig}>Guardar Meta</button>
@@ -298,86 +348,71 @@ export default function Ahorro() {
         </div>
       )}
 
+      {/* ───────── MODAL MOVIMIENTO (nuevo + editar unificado) ───────── */}
       {showMovimiento && (
-        <div className="modal-overlay" onClick={() => { setShowMovimiento(false); setEditMovId(null) }}>
+        <div className="modal-overlay" onClick={cerrarMovModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-title">
                 {editMovId ? 'Editar Movimiento' : 'Registrar Movimiento'}
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={() => { setShowMovimiento(false); setEditMovId(null) }}><X size={16} /></button>
+              <button className="btn-icon" onClick={cerrarMovModal} aria-label="Cerrar">
+                <X size={16} />
+              </button>
             </div>
+
             <div className="modal-body">
               <div className="form-group">
                 <label className="form-label">Tipo</label>
-                <select 
-                  className="form-input" 
-                  value={editMovId ? editMovForm.tipo : movForm.tipo} 
-                  onChange={e => {
-                    if (editMovId) {
-                      sem('tipo', e.target.value)
-                    } else {
-                      sm('tipo', e.target.value)
-                    }
-                  }}
+                <select
+                  className="form-input"
+                  value={movForm.tipo}
+                  onChange={e => sm('tipo', e.target.value)}
                 >
-                  <option value="deposito">Deposito (ahorre este dinero)</option>
-                  <option value="retiro">Retiro (saque este dinero)</option>
+                  <option value="deposito">Depósito (ahorré este dinero)</option>
+                  <option value="retiro">Retiro (saqué este dinero)</option>
                 </select>
               </div>
+
               <div className="form-grid-2">
                 <div className="form-group">
                   <label className="form-label">Monto ($)</label>
                   <input
                     type="number"
+                    inputMode="decimal"
                     className="form-input"
                     placeholder="0"
-                    value={editMovId ? editMovForm.monto : movForm.monto}
-                    onChange={e => {
-                      if (editMovId) {
-                        sem('monto', parseFloat(e.target.value) || '')
-                      } else {
-                        sm('monto', parseFloat(e.target.value) || '')
-                      }
-                    }}
+                    value={movForm.monto}
+                    onChange={e => sm('monto', parseFloat(e.target.value) || '')}
                     autoFocus
                   />
                 </div>
+
                 <div className="form-group">
                   <label className="form-label">Fecha</label>
-                  <input 
-                    type="date" 
-                    className="form-input" 
-                    value={editMovId ? editMovForm.fecha : movForm.fecha} 
-                    onChange={e => {
-                      if (editMovId) {
-                        sem('fecha', e.target.value)
-                      } else {
-                        sm('fecha', e.target.value)
-                      }
-                    }} 
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={movForm.fecha}
+                    onChange={e => sm('fecha', e.target.value)}
                   />
                 </div>
               </div>
+
               <div className="form-group">
-                <label className="form-label">Descripcion (opcional)</label>
+                <label className="form-label">Descripción (opcional)</label>
                 <input
                   className="form-input"
                   placeholder="Ej: Ganancias de ventas de la semana"
-                  value={editMovId ? editMovForm.descripcion : movForm.descripcion}
-                  onChange={e => {
-                    if (editMovId) {
-                      sem('descripcion', e.target.value)
-                    } else {
-                      sm('descripcion', e.target.value)
-                    }
-                  }}
+                  value={movForm.descripcion}
+                  onChange={e => sm('descripcion', e.target.value)}
                 />
               </div>
             </div>
+
             <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => { setShowMovimiento(false); setEditMovId(null) }}>Cancelar</button>
-              <button className="btn btn-gold" onClick={editMovId ? editarMovimiento : agregarMovimiento}>
+              <button className="btn btn-outline" onClick={cerrarMovModal}>Cancelar</button>
+              <button className="btn btn-gold" onClick={guardarMovimiento}>
                 {editMovId ? 'Guardar cambios' : 'Guardar'}
               </button>
             </div>
@@ -390,17 +425,12 @@ export default function Ahorro() {
 
 function MiniInfo({ icon, label, value, highlight }) {
   return (
-    <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 4, padding: '12px 16px' }}>
-      <div className="flex gap-2" style={{ color: 'var(--cream-dim)', alignItems: 'center', marginBottom: 5 }}>
+    <div className="mini-card">
+      <div className="mini-card-head">
         {icon}
         <span className="label">{label}</span>
       </div>
-      <div style={{
-        fontFamily: 'var(--font-display)',
-        fontSize: highlight ? '1.4rem' : '1.1rem',
-        color: highlight ? 'var(--gold)' : 'var(--cream)',
-        fontWeight: 300
-      }}>
+      <div className={`mini-card-value ${highlight ? 'gold' : ''}`}>
         {value}
       </div>
     </div>
