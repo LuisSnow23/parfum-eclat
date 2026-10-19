@@ -8,7 +8,7 @@ import {
   CreditCard,
   Pencil,
   Clock,
-  Archive
+  Archive,
 } from 'lucide-react'
 import { api, fmt, fmtDate } from '../api'
 
@@ -36,6 +36,32 @@ const emptyVenta = {
   notas: '',
 }
 
+const emptyFiltroVentas = {
+  cliente: '',
+  perfume: '',
+  estado: 'todos',
+  fechaInicio: '',
+  fechaFin: '',
+}
+
+const emptyFiltroAbonos = {
+  cliente: '',
+  perfume: '',
+  fechaInicio: '',
+  fechaFin: '',
+}
+
+const PERFUMES_POR_PAGINA = 10
+
+// Aplica los filtros de cliente / perfume / rango de fechas
+const pasaFiltro = (v, f) => {
+  if (f.cliente && !v.cliente?.toLowerCase().includes(f.cliente.toLowerCase())) return false
+  if (f.perfume && !v.perfume_nombre?.toLowerCase().includes(f.perfume.toLowerCase())) return false
+  if (f.fechaInicio && v.fecha < f.fechaInicio) return false
+  if (f.fechaFin && v.fecha > f.fechaFin) return false
+  return true
+}
+
 export default function Perfumes() {
   const [resumen, setResumen] = useState(null)
   const [perfumes, setPerfumes] = useState([])
@@ -46,33 +72,11 @@ export default function Perfumes() {
   const [error, setError] = useState('')
   const [perfumeForm, setPerfumeForm] = useState(emptyPerfume)
   const [ventaForm, setVentaForm] = useState(emptyVenta)
-
-  const [abonoForm, setAbonoForm] = useState({
-    monto: '',
-    fecha: hoy,
-    notas: '',
-  })
-
+  const [abonoForm, setAbonoForm] = useState({ monto: '', fecha: hoy, notas: '' })
   const [editAbonoId, setEditAbonoId] = useState(null)
-
-  const PERFUMES_POR_PAGINA = 10
   const [paginaPerfumes, setPaginaPerfumes] = useState(1)
-
-  const [historialFiltro, setHistorialFiltro] = useState({
-    cliente: '',
-    perfume: '',
-    estado: 'todos',
-    fechaInicio: '',
-    fechaFin: ''
-  })
-
-  // Filtros para el histórico de abonos finalizados
-  const [histAbonosFiltro, setHistAbonosFiltro] = useState({
-    cliente: '',
-    perfume: '',
-    fechaInicio: '',
-    fechaFin: ''
-  })
+  const [historialFiltro, setHistorialFiltro] = useState(emptyFiltroVentas)
+  const [histAbonosFiltro, setHistAbonosFiltro] = useState(emptyFiltroAbonos)
 
   const load = async () => {
     const [r, p, v] = await Promise.all([
@@ -80,7 +84,6 @@ export default function Perfumes() {
       api.get('/perfumes'),
       api.get('/ventas'),
     ])
-
     setResumen(r)
     setPerfumes(p)
     setVentas(v)
@@ -90,21 +93,11 @@ export default function Perfumes() {
     load()
   }, [])
 
-  const sp = (k, v) =>
-    setPerfumeForm(f => ({
-      ...f,
-      [k]: v,
-    }))
-
-  const sv = (k, v) =>
-    setVentaForm(f => ({
-      ...f,
-      [k]: v,
-    }))
+  const sp = (k, v) => setPerfumeForm(f => ({ ...f, [k]: v }))
+  const sv = (k, v) => setVentaForm(f => ({ ...f, [k]: v }))
 
   const setPiezas = val => {
     const n = parseInt(val, 10) || 1
-
     setPerfumeForm(f => ({
       ...f,
       piezas_compradas: n,
@@ -117,29 +110,27 @@ export default function Perfumes() {
 
   const envioU = () => {
     const env = parseFloat(perfumeForm.costo_envio) || 0
-
-    const n = Math.max(
-      parseInt(perfumeForm.piezas_envio, 10) || 1,
-      1
-    )
-
+    const n = Math.max(parseInt(perfumeForm.piezas_envio, 10) || 1, 1)
     return env / n
   }
 
-  const costoU = () =>
-    (parseFloat(perfumeForm.precio_proveedor) || 0) + envioU()
+  const costoU = () => (parseFloat(perfumeForm.precio_proveedor) || 0) + envioU()
 
-  const gananciaU = () =>
-    (parseFloat(perfumeForm.precio_publico) || 0) - costoU()
+  const gananciaU = () => (parseFloat(perfumeForm.precio_publico) || 0) - costoU()
 
   const totalVenta = () =>
     (parseFloat(ventaForm.precio_unitario) || 0) *
     (parseInt(ventaForm.cantidad, 10) || 1)
 
+  const cerrarModal = () => {
+    setModal(null)
+    setEditId(null)
+    setEditAbonoId(null)
+  }
+
   const openEditPerfume = p => {
     setError('')
     setEditId(p.id)
-
     setPerfumeForm({
       nombre: p.nombre || '',
       proveedor: p.proveedor || '',
@@ -147,13 +138,9 @@ export default function Perfumes() {
       precio_publico: p.precio_publico ?? '',
       piezas_compradas: p.piezas_compradas ?? 1,
       costo_envio: p.costo_envio ?? 0,
-      piezas_envio:
-        p.piezas_envio ??
-        p.piezas_compradas ??
-        1,
+      piezas_envio: p.piezas_envio ?? p.piezas_compradas ?? 1,
       notas: p.notas || '',
     })
-
     setModal('perfume')
   }
 
@@ -180,7 +167,6 @@ export default function Perfumes() {
     }
 
     await load()
-
     setModal(null)
     setEditId(null)
     setPerfumeForm(emptyPerfume)
@@ -189,7 +175,6 @@ export default function Perfumes() {
   const openEditVenta = v => {
     setError('')
     setEditId(v.id)
-
     setVentaForm({
       perfume_id: String(v.perfume_id),
       cliente: v.cliente || '',
@@ -200,7 +185,6 @@ export default function Perfumes() {
       fecha: v.fecha || hoy,
       notas: v.notas || '',
     })
-
     setModal('venta')
   }
 
@@ -219,7 +203,6 @@ export default function Perfumes() {
         ...ventaForm,
         total_venta: total,
       })
-
       if (res.error) {
         setError(res.error)
         return
@@ -235,7 +218,6 @@ export default function Perfumes() {
               ? 0
               : Number(ventaForm.abonado),
       })
-
       if (res.error) {
         setError(res.error)
         return
@@ -243,26 +225,15 @@ export default function Perfumes() {
     }
 
     await load()
-
     setModal(null)
     setEditId(null)
-
-    setVentaForm({
-      ...emptyVenta,
-      fecha: hoy,
-    })
+    setVentaForm({ ...emptyVenta, fecha: hoy })
   }
 
   const openAbono = v => {
     setVentaAbono(v)
     setEditAbonoId(null)
-
-    setAbonoForm({
-      monto: '',
-      fecha: hoy,
-      notas: '',
-    })
-
+    setAbonoForm({ monto: '', fecha: hoy, notas: '' })
     setError('')
     setModal('abono')
   }
@@ -270,13 +241,11 @@ export default function Perfumes() {
   const openEditAbono = (abono, venta) => {
     setVentaAbono(venta)
     setEditAbonoId(abono.id)
-
     setAbonoForm({
       monto: abono.monto,
       fecha: abono.fecha || hoy,
       notas: abono.notas || '',
     })
-
     setError('')
     setModal('abono')
   }
@@ -289,16 +258,9 @@ export default function Perfumes() {
       return
     }
 
-    let res
-
-    if (editAbonoId) {
-      res = await api.put(`/abonos/${editAbonoId}`, abonoForm)
-    } else {
-      res = await api.post(
-        `/ventas/${ventaAbono.id}/abonos`,
-        abonoForm
-      )
-    }
+    const res = editAbonoId
+      ? await api.put(`/abonos/${editAbonoId}`, abonoForm)
+      : await api.post(`/ventas/${ventaAbono.id}/abonos`, abonoForm)
 
     if (res.error) {
       setError(res.error)
@@ -306,119 +268,40 @@ export default function Perfumes() {
     }
 
     await load()
-
     setModal(null)
     setVentaAbono(null)
     setEditAbonoId(null)
   }
 
   const eliminar = async (tipo, id) => {
-    if (!confirm('¿Eliminar? Esta acción no se puede deshacer.')) {
-      return
-    }
+    if (!confirm('¿Eliminar? Esta acción no se puede deshacer.')) return
 
     const res = await api.delete(`/${tipo}/${id}`)
-
-    if (res.error) {
-      alert(res.error)
-    }
-
+    if (res.error) alert(res.error)
     load()
   }
 
   const ventasPendientes = ventas.filter(v => !v.liquidado)
-
   const ventasLiquidadas = ventas.filter(v => v.liquidado)
 
-  const ventasFiltradas = ventasLiquidadas.filter(v => {
-    if (
-      historialFiltro.cliente &&
-      !v.cliente
-        ?.toLowerCase()
-        .includes(historialFiltro.cliente.toLowerCase())
-    ) {
-      return false
-    }
+  const ventasFiltradas = ventasLiquidadas.filter(v => pasaFiltro(v, historialFiltro))
 
-    if (
-      historialFiltro.perfume &&
-      !v.perfume_nombre
-        ?.toLowerCase()
-        .includes(historialFiltro.perfume.toLowerCase())
-    ) {
-      return false
-    }
-
-    if (
-      historialFiltro.fechaInicio &&
-      v.fecha < historialFiltro.fechaInicio
-    ) {
-      return false
-    }
-
-    if (
-      historialFiltro.fechaFin &&
-      v.fecha > historialFiltro.fechaFin
-    ) {
-      return false
-    }
-
-    return true
-  })
-
-  // ✅ Abonos de ventas NO liquidadas (activos)
+  // Abonos de ventas NO liquidadas (activos)
   const ventasPendientesConAbonos = ventas
     .filter(v => !v.liquidado && v.abonos?.length > 0)
     .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
 
-  // ✅ Abonos de ventas liquidadas (histórico)
+  // Abonos de ventas liquidadas (histórico)
   const ventasLiquidadasConAbonos = ventasLiquidadas
     .filter(v => v.abonos?.length > 0)
-    .filter(v => {
-      if (
-        histAbonosFiltro.cliente &&
-        !v.cliente
-          ?.toLowerCase()
-          .includes(histAbonosFiltro.cliente.toLowerCase())
-      ) {
-        return false
-      }
-
-      if (
-        histAbonosFiltro.perfume &&
-        !v.perfume_nombre
-          ?.toLowerCase()
-          .includes(histAbonosFiltro.perfume.toLowerCase())
-      ) {
-        return false
-      }
-
-      if (
-        histAbonosFiltro.fechaInicio &&
-        v.fecha < histAbonosFiltro.fechaInicio
-      ) {
-        return false
-      }
-
-      if (
-        histAbonosFiltro.fechaFin &&
-        v.fecha > histAbonosFiltro.fechaFin
-      ) {
-        return false
-      }
-
-      return true
-    })
+    .filter(v => pasaFiltro(v, histAbonosFiltro))
     .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
 
   if (!resumen) {
     return (
       <div
         className="flex-center"
-        style={{
-          height: 280,
-          color: 'var(--cream-dim)',
-        }}
+        style={{ height: 280, color: 'var(--cream-dim)' }}
       >
         Cargando...
       </div>
@@ -434,25 +317,19 @@ export default function Perfumes() {
     1,
     Math.ceil(perfumes.length / PERFUMES_POR_PAGINA)
   )
-
-  const paginaPerfumesActual = Math.min(
-    paginaPerfumes,
-    totalPaginasPerfumes
-  )
-
-  const inicioPerfumes =
-    (paginaPerfumesActual - 1) * PERFUMES_POR_PAGINA
-
+  const paginaPerfumesActual = Math.min(paginaPerfumes, totalPaginasPerfumes)
+  const inicioPerfumes = (paginaPerfumesActual - 1) * PERFUMES_POR_PAGINA
   const perfumesPaginados = perfumes.slice(
     inicioPerfumes,
     inicioPerfumes + PERFUMES_POR_PAGINA
   )
 
-  // Totales del histórico de abonos
   const totalAbonosHistoricos = ventasLiquidadasConAbonos.reduce(
     (s, v) => s + v.abonos.reduce((s2, a) => s2 + Number(a.monto), 0),
     0
   )
+
+  const esHistorial = modal === 'historial' || modal === 'historialAbonos'
 
   return (
     <div>
@@ -460,39 +337,23 @@ export default function Perfumes() {
         <div>
           <div className="ornament">✦ ✦ ✦</div>
 
-          <h1
-            className="page-title"
-            style={{ marginTop: 8 }}
-          >
+          <h1 className="page-title" style={{ marginTop: 8 }}>
             Mis <span>Perfumes</span>
           </h1>
 
-          <div
-            className="label"
-            style={{ marginTop: 6 }}
-          >
+          <div className="label" style={{ marginTop: 6 }}>
             Control estricto de costos, ventas y dinero
           </div>
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            gap: 10,
-          }}
-        >
+        <div className="header-actions">
           <button
             className="btn btn-outline"
             disabled={!perfumes.some(p => p.stock > 0)}
             onClick={() => {
               setError('')
               setEditId(null)
-
-              setVentaForm({
-                ...emptyVenta,
-                fecha: hoy,
-              })
-
+              setVentaForm({ ...emptyVenta, fecha: hoy })
               setModal('venta')
             }}
           >
@@ -504,20 +365,10 @@ export default function Perfumes() {
             className="btn btn-outline"
             onClick={() => {
               setError('')
-
-              setHistorialFiltro({
-                cliente: '',
-                perfume: '',
-                estado: 'todos',
-                fechaInicio: '',
-                fechaFin: ''
-              })
-
+              setHistorialFiltro(emptyFiltroVentas)
               setModal('historial')
             }}
-            style={{
-              borderColor: 'var(--gold)'
-            }}
+            style={{ borderColor: 'var(--gold)' }}
           >
             <Clock size={14} />
             Historial de ventas
@@ -540,16 +391,11 @@ export default function Perfumes() {
 
       <div className="stats-grid">
         <div className="stat-card">
-          <div className="label">
-            Dinero en caja (cobrado)
-          </div>
+          <div className="label">Dinero en caja (cobrado)</div>
 
           <div
             className="stat-value"
-            style={{
-              color: '#4a8c6a',
-              fontSize: '1.15rem',
-            }}
+            style={{ color: '#4a8c6a', fontSize: '1.15rem' }}
           >
             {fmt(resumen.dinero_en_caja)}
           </div>
@@ -570,28 +416,14 @@ export default function Perfumes() {
           value={fmt(totalPorCobrarGlobal)}
           color="#c9a84c"
         />
-
-        <Kpi
-          label="Capital en inventario"
-          value={fmt(resumen.capital_en_inventario)}
-        />
-
-        <Kpi
-          label="Capital total invertido"
-          value={fmt(resumen.capital_invertido)}
-        />
-
-        <Kpi
-          label="Stock (piezas)"
-          value={`${resumen.stock}`}
-        />
-
+        <Kpi label="Capital en inventario" value={fmt(resumen.capital_en_inventario)} />
+        <Kpi label="Capital total invertido" value={fmt(resumen.capital_invertido)} />
+        <Kpi label="Stock (piezas)" value={`${resumen.stock}`} />
         <Kpi
           label="Valor stock a público"
           value={fmt(resumen.valor_stock_publico)}
           color="#c9a84c"
         />
-
         <Kpi
           label="Valor potencial total"
           value={fmt(resumen.valor_potencial_total)}
@@ -609,26 +441,18 @@ export default function Perfumes() {
           lineHeight: 1.6,
         }}
       >
-        <strong style={{ color: 'var(--gold)' }}>
-          Cómo leer los números:
-        </strong>{' '}
-
-        <em>Dinero en caja</em> = lo que te han pagado los
-        clientes <strong>menos</strong> lo que has retirado del
-        fondo de socios.
+        <strong style={{ color: 'var(--gold)' }}>Cómo leer los números:</strong>{' '}
+        <em>Dinero en caja</em> = lo que te han pagado los clientes{' '}
+        <strong>menos</strong> lo que has retirado del fondo de socios.
         <br />
-
         Si necesitas gastar en nuevos perfumes, registra un{' '}
-        <strong>retiro en el Fondo de Socios</strong> y se
-        reflejará automáticamente.
+        <strong>retiro en el Fondo de Socios</strong> y se reflejará
+        automáticamente.
         <br />
-
-        <em>Por cobrar</em> = Suma de los saldos restantes de
-        TODAS las ventas pendientes.
+        <em>Por cobrar</em> = Suma de los saldos restantes de TODAS las ventas
+        pendientes.
         <br />
-
-        <em>Capital en inventario</em> = lo que te costó lo que
-        aún no vendes.
+        <em>Capital en inventario</em> = lo que te costó lo que aún no vendes.
       </div>
 
       {error && !modal && (
@@ -645,26 +469,18 @@ export default function Perfumes() {
         </div>
       )}
 
+      {/* ───────────── INVENTARIO ───────────── */}
       <div className="card">
-        <div className="section-title mb-4">
-          Inventario
-        </div>
+        <div className="section-title mb-4">Inventario</div>
 
         {perfumes.length === 0 ? (
           <div className="empty-state">
-            <Package
-              size={28}
-              style={{
-                opacity: 0.4,
-                marginBottom: 8,
-              }}
-            />
-
+            <Package size={28} style={{ opacity: 0.4, marginBottom: 8 }} />
             <p>Sin perfumes. Registra el primero.</p>
           </div>
         ) : (
-          <div className="table-wrap">
-            <table className="data-table">
+          <div className="table-wrap table-stack-wrap">
+            <table className="data-table stack-table">
               <thead>
                 <tr>
                   <th>Perfume</th>
@@ -685,25 +501,19 @@ export default function Perfumes() {
                 {perfumesPaginados.map(p => (
                   <tr key={p.id}>
                     <td
-                      style={{
-                        color: 'var(--cream)',
-                        fontWeight: 500,
-                      }}
+                      className="cell-title"
+                      data-label="Perfume"
+                      style={{ color: 'var(--cream)', fontWeight: 500 }}
                     >
                       {p.nombre}
                     </td>
 
-                    <td>
-                      {p.proveedor || '—'}
-                    </td>
+                    <td data-label="Proveedor">{p.proveedor || '—'}</td>
 
-                    <td>
-                      {fmt(p.precio_proveedor)}
-                    </td>
+                    <td data-label="Costo prov.">{fmt(p.precio_proveedor)}</td>
 
-                    <td>
+                    <td data-label="Envío/u">
                       {fmt(p.envio_unitario)}
-
                       <span
                         style={{
                           display: 'block',
@@ -715,37 +525,24 @@ export default function Perfumes() {
                       </span>
                     </td>
 
-                    <td>
-                      {fmt(p.costo_unitario)}
-                    </td>
+                    <td data-label="Costo/u">{fmt(p.costo_unitario)}</td>
 
-                    <td className="td-gold">
+                    <td className="td-gold" data-label="P. público">
                       {fmt(p.precio_publico)}
                     </td>
 
                     <td
-                      className={
-                        p.ganancia_unitaria >= 0
-                          ? 'td-green'
-                          : 'td-red'
-                      }
+                      className={p.ganancia_unitaria >= 0 ? 'td-green' : 'td-red'}
+                      data-label="Ganancia/u"
                     >
                       {fmt(p.ganancia_unitaria)}
                     </td>
 
-                    <td>
-                      {p.piezas_compradas}
-                    </td>
+                    <td data-label="Cant.">{p.piezas_compradas}</td>
+                    <td data-label="Vendidos">{p.vendidos}</td>
+                    <td data-label="Stock">{p.stock}</td>
 
-                    <td>
-                      {p.vendidos}
-                    </td>
-
-                    <td>
-                      {p.stock}
-                    </td>
-
-                    <td style={{ whiteSpace: 'nowrap' }}>
+                    <td className="cell-actions" style={{ whiteSpace: 'nowrap' }}>
                       <button
                         className="btn-icon"
                         title="Editar"
@@ -757,9 +554,7 @@ export default function Perfumes() {
                       <button
                         className="btn-icon"
                         title="Eliminar"
-                        onClick={() =>
-                          eliminar('perfumes', p.id)
-                        }
+                        onClick={() => eliminar('perfumes', p.id)}
                       >
                         <Trash2 size={14} />
                       </button>
@@ -770,48 +565,24 @@ export default function Perfumes() {
             </table>
 
             {perfumes.length > PERFUMES_POR_PAGINA && (
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  gap: 12,
-                  marginTop: 16,
-                }}
-              >
+              <div className="pager">
                 <button
                   className="btn btn-outline"
                   disabled={paginaPerfumesActual === 1}
-                  onClick={() =>
-                    setPaginaPerfumes(pagina =>
-                      Math.max(1, pagina - 1)
-                    )
-                  }
+                  onClick={() => setPaginaPerfumes(pg => Math.max(1, pg - 1))}
                 >
                   Anterior
                 </button>
 
-                <span
-                  style={{
-                    fontSize: '0.78rem',
-                    color: 'var(--cream-dim)',
-                  }}
-                >
+                <span style={{ fontSize: '0.78rem', color: 'var(--cream-dim)' }}>
                   Página {paginaPerfumesActual} de {totalPaginasPerfumes}
                 </span>
 
                 <button
                   className="btn btn-outline"
-                  disabled={
-                    paginaPerfumesActual === totalPaginasPerfumes
-                  }
+                  disabled={paginaPerfumesActual === totalPaginasPerfumes}
                   onClick={() =>
-                    setPaginaPerfumes(pagina =>
-                      Math.min(
-                        totalPaginasPerfumes,
-                        pagina + 1
-                      )
-                    )
+                    setPaginaPerfumes(pg => Math.min(totalPaginasPerfumes, pg + 1))
                   }
                 >
                   Siguiente
@@ -822,23 +593,19 @@ export default function Perfumes() {
         )}
       </div>
 
-      <div
-        className="card"
-        style={{ marginTop: 20 }}
-      >
+      {/* ───────────── VENTAS PENDIENTES ───────────── */}
+      <div className="card" style={{ marginTop: 20 }}>
         <div className="section-title mb-4">
           Ventas pendientes ({ventasPendientes.length})
         </div>
 
         {ventasPendientes.length === 0 ? (
           <div className="empty-state">
-            <p>
-              No hay ventas pendientes. Todas están liquidadas.
-            </p>
+            <p>No hay ventas pendientes. Todas están liquidadas.</p>
           </div>
         ) : (
-          <div className="table-wrap">
-            <table className="data-table">
+          <div className="table-wrap table-stack-wrap">
+            <table className="data-table stack-table">
               <thead>
                 <tr>
                   <th>Fecha</th>
@@ -858,55 +625,47 @@ export default function Perfumes() {
               <tbody>
                 {ventasPendientes.map(v => (
                   <tr key={v.id}>
-                    <td>
-                      {fmtDate(v.fecha)}
-                    </td>
+                    <td data-label="Fecha">{fmtDate(v.fecha)}</td>
 
                     <td
-                      style={{
-                        color: 'var(--cream)',
-                      }}
+                      className="cell-title"
+                      data-label="Cliente"
+                      style={{ color: 'var(--cream)' }}
                     >
-                      {v.cliente || '—'}
-                    </td>
-
-                    <td>
-                      {v.perfume_nombre}
-                    </td>
-
-                    <td>
-                      {v.cantidad}
-                    </td>
-
-                    <td>
-                      {fmt(v.total_venta)}
-                    </td>
-
-                    <td>
-                      {v.tipo_pago === 'abonos'
-                        ? 'A plazos'
-                        : '1 pago'}
-                    </td>
-
-                    <td className="td-green">
-                      {fmt(v.abonado)}
-                    </td>
-
-                    <td className="td-gold">
-                      {fmt(v.resto)}
-                    </td>
-
-                    <td>
-                      {v.notas || '—'}
-                    </td>
-
-                    <td>
-                      <span className="badge badge-gold">
-                        {v.pct_pagado}%
+                      <span>{v.cliente || '—'}</span>
+                      <span className="badge badge-gold cell-title-badge">
+                        {v.pct_pagado}% pagado
                       </span>
                     </td>
 
-                    <td style={{ whiteSpace: 'nowrap' }}>
+                    <td className="cell-full" data-label="Perfume">
+                      {v.perfume_nombre}
+                    </td>
+
+                    <td data-label="Cant.">{v.cantidad}</td>
+                    <td data-label="Total">{fmt(v.total_venta)}</td>
+
+                    <td data-label="Pago">
+                      {v.tipo_pago === 'abonos' ? 'A plazos' : '1 pago'}
+                    </td>
+
+                    <td className="td-green" data-label="Abonado">
+                      {fmt(v.abonado)}
+                    </td>
+
+                    <td className="td-gold" data-label="Resta">
+                      {fmt(v.resto)}
+                    </td>
+
+                    <td className="cell-notas" data-label="Notas">
+                      {v.notas || '—'}
+                    </td>
+
+                    <td className="cell-estado" data-label="Estado">
+                      <span className="badge badge-gold">{v.pct_pagado}%</span>
+                    </td>
+
+                    <td className="cell-actions" style={{ whiteSpace: 'nowrap' }}>
                       <button
                         className="btn-icon"
                         title="Editar venta"
@@ -926,9 +685,7 @@ export default function Perfumes() {
                       <button
                         className="btn-icon"
                         title="Eliminar venta"
-                        onClick={() =>
-                          eliminar('ventas', v.id)
-                        }
+                        onClick={() => eliminar('ventas', v.id)}
                       >
                         <Trash2 size={14} />
                       </button>
@@ -941,12 +698,9 @@ export default function Perfumes() {
         )}
       </div>
 
-      {/* ✅ HISTORIAL DE ABONOS ACTIVOS (solo ventas pendientes) */}
+      {/* ───────────── HISTORIAL DE ABONOS ACTIVOS ───────────── */}
       {ventasPendientesConAbonos.length > 0 && (
-        <div
-          className="card"
-          style={{ marginTop: 20 }}
-        >
+        <div className="card" style={{ marginTop: 20 }}>
           <div
             className="section-title mb-4"
             style={{
@@ -954,7 +708,7 @@ export default function Perfumes() {
               justifyContent: 'space-between',
               alignItems: 'center',
               gap: 10,
-              flexWrap: 'wrap'
+              flexWrap: 'wrap',
             }}
           >
             <span>Historial de abonos (activos)</span>
@@ -962,12 +716,7 @@ export default function Perfumes() {
             <button
               className="btn btn-outline btn-sm"
               onClick={() => {
-                setHistAbonosFiltro({
-                  cliente: '',
-                  perfume: '',
-                  fechaInicio: '',
-                  fechaFin: ''
-                })
+                setHistAbonosFiltro(emptyFiltroAbonos)
                 setModal('historialAbonos')
               }}
               style={{ borderColor: 'var(--gold)' }}
@@ -978,128 +727,83 @@ export default function Perfumes() {
           </div>
 
           {ventasPendientesConAbonos.map(v => (
-            <div
-              key={v.id}
-              style={{
-                marginBottom: 14,
-                paddingBottom: 10,
-                borderBottom:
-                  '1px solid var(--noir-border)',
-              }}
-            >
-              <div
-                style={{
-                  fontSize: '0.85rem',
-                  color: 'var(--cream)',
-                  marginBottom: 6,
-                }}
-              >
-                {v.cliente || 'Cliente'} —{' '}
-                {v.perfume_nombre} ({fmt(v.total_venta)})
+            <div key={v.id} className="abono-group">
+              <div className="abono-group-title">
+                {v.cliente || 'Cliente'} — {v.perfume_nombre} ({fmt(v.total_venta)})
               </div>
 
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Monto</th>
-                    <th>Notas</th>
-                    <th></th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {v.abonos.map(a => (
-                    <tr key={a.id}>
-                      <td>
-                        {fmtDate(a.fecha)}
-                      </td>
-
-                      <td className="td-green">
-                        {fmt(a.monto)}
-                      </td>
-
-                      <td>
-                        {a.notas || '—'}
-                      </td>
-
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        <button
-                          className="btn-icon"
-                          title="Editar abono"
-                          onClick={() =>
-                            openEditAbono(a, v)
-                          }
-                        >
-                          <Pencil size={14} />
-                        </button>
-
-                        <button
-                          className="btn-icon"
-                          title="Eliminar abono"
-                          onClick={() =>
-                            eliminar('abonos', a.id)
-                          }
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </td>
+              <div className="table-wrap table-stack-wrap">
+                <table className="data-table stack-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Monto</th>
+                      <th>Notas</th>
+                      <th></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+
+                  <tbody>
+                    {v.abonos.map(a => (
+                      <tr key={a.id}>
+                        <td data-label="Fecha">{fmtDate(a.fecha)}</td>
+
+                        <td className="td-green" data-label="Monto">
+                          {fmt(a.monto)}
+                        </td>
+
+                        <td className="cell-notas" data-label="Notas">
+                          {a.notas || '—'}
+                        </td>
+
+                        <td className="cell-actions" style={{ whiteSpace: 'nowrap' }}>
+                          <button
+                            className="btn-icon"
+                            title="Editar abono"
+                            onClick={() => openEditAbono(a, v)}
+                          >
+                            <Pencil size={14} />
+                          </button>
+
+                          <button
+                            className="btn-icon"
+                            title="Eliminar abono"
+                            onClick={() => eliminar('abonos', a.id)}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ))}
         </div>
       )}
 
+      {/* ───────────── MODALES ───────────── */}
       {modal && (
-        <div
-          className="modal-overlay"
-          onClick={() => setModal(null)}
-        >
+        <div className="modal-overlay" onClick={() => setModal(null)}>
           <div
             className="modal"
             onClick={e => e.stopPropagation()}
-            style={{
-              maxWidth:
-                modal === 'historial' || modal === 'historialAbonos'
-                  ? 800
-                  : 520,
-            }}
+            style={{ maxWidth: esHistorial ? 800 : 520 }}
           >
             <div className="modal-header">
               <span className="section-title">
                 {modal === 'perfume' &&
-                  (editId
-                    ? 'Editar perfume'
-                    : 'Registrar perfume')}
-
+                  (editId ? 'Editar perfume' : 'Registrar perfume')}
                 {modal === 'venta' &&
-                  (editId
-                    ? 'Editar venta'
-                    : 'Registrar venta')}
-
+                  (editId ? 'Editar venta' : 'Registrar venta')}
                 {modal === 'abono' &&
-                  (editAbonoId
-                    ? 'Editar abono'
-                    : 'Registrar abono')}
-
-                {modal === 'historial' &&
-                  'Historial de ventas liquidadas'}
-
-                {modal === 'historialAbonos' &&
-                  'Histórico de abonos finalizados'}
+                  (editAbonoId ? 'Editar abono' : 'Registrar abono')}
+                {modal === 'historial' && 'Historial de ventas liquidadas'}
+                {modal === 'historialAbonos' && 'Histórico de abonos finalizados'}
               </span>
 
-              <button
-                className="btn-icon"
-                onClick={() => {
-                  setModal(null)
-                  setEditId(null)
-                  setEditAbonoId(null)
-                }}
-              >
+              <button className="btn-icon" onClick={cerrarModal} aria-label="Cerrar">
                 <X size={16} />
               </button>
             </div>
@@ -1117,25 +821,16 @@ export default function Perfumes() {
                 </div>
               )}
 
+              {/* ── Historial de ventas liquidadas ── */}
               {modal === 'historial' && (
                 <>
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: 10,
-                      marginBottom: 16,
-                    }}
-                  >
+                  <div className="filter-grid">
                     <input
                       className="form-input"
                       placeholder="Buscar cliente..."
                       value={historialFiltro.cliente}
                       onChange={e =>
-                        setHistorialFiltro(f => ({
-                          ...f,
-                          cliente: e.target.value,
-                        }))
+                        setHistorialFiltro(f => ({ ...f, cliente: e.target.value }))
                       }
                     />
 
@@ -1144,22 +839,16 @@ export default function Perfumes() {
                       placeholder="Buscar perfume..."
                       value={historialFiltro.perfume}
                       onChange={e =>
-                        setHistorialFiltro(f => ({
-                          ...f,
-                          perfume: e.target.value,
-                        }))
+                        setHistorialFiltro(f => ({ ...f, perfume: e.target.value }))
                       }
                     />
                   </div>
 
                   <div
-                    className="table-wrap"
-                    style={{
-                      maxHeight: 400,
-                      overflowY: 'auto'
-                    }}
+                    className="table-wrap table-stack-wrap"
+                    style={{ maxHeight: 400, overflowY: 'auto' }}
                   >
-                    <table className="data-table">
+                    <table className="data-table stack-table">
                       <thead>
                         <tr>
                           <th>Fecha</th>
@@ -1177,6 +866,7 @@ export default function Perfumes() {
                           <tr>
                             <td
                               colSpan={7}
+                              className="cell-full"
                               style={{
                                 textAlign: 'center',
                                 color: 'var(--cream-dim)',
@@ -1188,35 +878,31 @@ export default function Perfumes() {
                         ) : (
                           ventasFiltradas.map(v => (
                             <tr key={v.id}>
-                              <td>
-                                {fmtDate(v.fecha)}
-                              </td>
+                              <td data-label="Fecha">{fmtDate(v.fecha)}</td>
 
                               <td
-                                style={{
-                                  color: 'var(--cream)',
-                                }}
+                                className="cell-title"
+                                data-label="Cliente"
+                                style={{ color: 'var(--cream)' }}
                               >
                                 {v.cliente || '—'}
                               </td>
 
-                              <td>
+                              <td className="cell-full" data-label="Perfume">
                                 {v.perfume_nombre}
                               </td>
 
-                              <td>
-                                {fmt(v.total_venta)}
-                              </td>
+                              <td data-label="Total">{fmt(v.total_venta)}</td>
 
-                              <td className="td-green">
+                              <td className="td-green" data-label="Abonado">
                                 {fmt(v.abonado)}
                               </td>
 
-                              <td className="td-gold">
+                              <td className="td-gold" data-label="Resta">
                                 {fmt(v.resto)}
                               </td>
 
-                              <td>
+                              <td className="cell-notas" data-label="Notas">
                                 {v.notas || '—'}
                               </td>
                             </tr>
@@ -1226,52 +912,25 @@ export default function Perfumes() {
                     </table>
                   </div>
 
-                  <div
-                    style={{
-                      marginTop: 16,
-                      display: 'flex',
-                      gap: 20,
-                      justifyContent: 'flex-end',
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: '0.85rem',
-                        color: 'var(--cream-dim)',
-                      }}
-                    >
+                  <div className="totals-row">
+                    <div>
                       Total ventas:{' '}
-                      <strong
-                        style={{
-                          color: 'var(--cream)'
-                        }}
-                      >
+                      <strong style={{ color: 'var(--cream)' }}>
                         {fmt(
                           ventasFiltradas.reduce(
-                            (s, v) =>
-                              s + Number(v.total_venta || 0),
+                            (s, v) => s + Number(v.total_venta || 0),
                             0
                           )
                         )}
                       </strong>
                     </div>
 
-                    <div
-                      style={{
-                        fontSize: '0.85rem',
-                        color: 'var(--cream-dim)',
-                      }}
-                    >
+                    <div>
                       Total cobrado:{' '}
-                      <strong
-                        style={{
-                          color: '#4a8c6a'
-                        }}
-                      >
+                      <strong style={{ color: '#4a8c6a' }}>
                         {fmt(
                           ventasFiltradas.reduce(
-                            (s, v) =>
-                              s + Number(v.abonado || 0),
+                            (s, v) => s + Number(v.abonado || 0),
                             0
                           )
                         )}
@@ -1281,26 +940,16 @@ export default function Perfumes() {
                 </>
               )}
 
-              {/* ✅ MODAL DE HISTÓRICO DE ABONOS FINALIZADOS */}
+              {/* ── Histórico de abonos finalizados ── */}
               {modal === 'historialAbonos' && (
                 <>
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: 10,
-                      marginBottom: 16,
-                    }}
-                  >
+                  <div className="filter-grid">
                     <input
                       className="form-input"
                       placeholder="Buscar cliente..."
                       value={histAbonosFiltro.cliente}
                       onChange={e =>
-                        setHistAbonosFiltro(f => ({
-                          ...f,
-                          cliente: e.target.value,
-                        }))
+                        setHistAbonosFiltro(f => ({ ...f, cliente: e.target.value }))
                       }
                     />
 
@@ -1309,40 +958,22 @@ export default function Perfumes() {
                       placeholder="Buscar perfume..."
                       value={histAbonosFiltro.perfume}
                       onChange={e =>
-                        setHistAbonosFiltro(f => ({
-                          ...f,
-                          perfume: e.target.value,
-                        }))
+                        setHistAbonosFiltro(f => ({ ...f, perfume: e.target.value }))
                       }
                     />
                   </div>
 
-                  <div
-                    style={{
-                      maxHeight: 450,
-                      overflowY: 'auto',
-                    }}
-                  >
+                  <div style={{ maxHeight: 450, overflowY: 'auto' }}>
                     {ventasLiquidadasConAbonos.length === 0 ? (
                       <div className="empty-state">
                         <p>No hay abonos de ventas liquidadas</p>
                       </div>
                     ) : (
                       ventasLiquidadasConAbonos.map(v => (
-                        <div
-                          key={v.id}
-                          style={{
-                            marginBottom: 14,
-                            paddingBottom: 10,
-                            borderBottom:
-                              '1px solid var(--noir-border)',
-                          }}
-                        >
+                        <div key={v.id} className="abono-group">
                           <div
+                            className="abono-group-title"
                             style={{
-                              fontSize: '0.85rem',
-                              color: 'var(--cream)',
-                              marginBottom: 6,
                               display: 'flex',
                               justifyContent: 'space-between',
                               flexWrap: 'wrap',
@@ -1350,8 +981,8 @@ export default function Perfumes() {
                             }}
                           >
                             <span>
-                              {v.cliente || 'Cliente'} —{' '}
-                              {v.perfume_nombre} ({fmt(v.total_venta)})
+                              {v.cliente || 'Cliente'} — {v.perfume_nombre} (
+                              {fmt(v.total_venta)})
                             </span>
 
                             <span
@@ -1362,74 +993,49 @@ export default function Perfumes() {
                             </span>
                           </div>
 
-                          <table className="data-table">
-                            <thead>
-                              <tr>
-                                <th>Fecha</th>
-                                <th>Monto</th>
-                                <th>Notas</th>
-                              </tr>
-                            </thead>
-
-                            <tbody>
-                              {v.abonos.map(a => (
-                                <tr key={a.id}>
-                                  <td>
-                                    {fmtDate(a.fecha)}
-                                  </td>
-
-                                  <td className="td-green">
-                                    {fmt(a.monto)}
-                                  </td>
-
-                                  <td>
-                                    {a.notas || '—'}
-                                  </td>
+                          <div className="table-wrap table-stack-wrap">
+                            <table className="data-table stack-table">
+                              <thead>
+                                <tr>
+                                  <th>Fecha</th>
+                                  <th>Monto</th>
+                                  <th>Notas</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                              </thead>
+
+                              <tbody>
+                                {v.abonos.map(a => (
+                                  <tr key={a.id}>
+                                    <td data-label="Fecha">{fmtDate(a.fecha)}</td>
+
+                                    <td className="td-green" data-label="Monto">
+                                      {fmt(a.monto)}
+                                    </td>
+
+                                    <td className="cell-notas" data-label="Notas">
+                                      {a.notas || '—'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       ))
                     )}
                   </div>
 
-                  <div
-                    style={{
-                      marginTop: 16,
-                      display: 'flex',
-                      gap: 20,
-                      justifyContent: 'flex-end',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: '0.85rem',
-                        color: 'var(--cream-dim)',
-                      }}
-                    >
+                  <div className="totals-row">
+                    <div>
                       Ventas liquidadas:{' '}
-                      <strong
-                        style={{
-                          color: 'var(--cream)'
-                        }}
-                      >
+                      <strong style={{ color: 'var(--cream)' }}>
                         {ventasLiquidadasConAbonos.length}
                       </strong>
                     </div>
 
-                    <div
-                      style={{
-                        fontSize: '0.85rem',
-                        color: 'var(--cream-dim)',
-                      }}
-                    >
+                    <div>
                       Total abonos históricos:{' '}
-                      <strong                        style={{
-                          color: '#4a8c6a'
-                        }}
-                      >
+                      <strong style={{ color: '#4a8c6a' }}>
                         {fmt(totalAbonosHistoricos)}
                       </strong>
                     </div>
@@ -1437,166 +1043,101 @@ export default function Perfumes() {
                 </>
               )}
 
+              {/* ── Formulario de perfume ── */}
               {modal === 'perfume' && (
                 <>
                   <div className="form-group">
-                    <label className="form-label">
-                      Nombre del perfume *
-                    </label>
-
+                    <label className="form-label">Nombre del perfume *</label>
                     <input
                       className="form-input"
                       value={perfumeForm.nombre}
-                      onChange={e =>
-                        sp('nombre', e.target.value)
-                      }
+                      onChange={e => sp('nombre', e.target.value)}
                       placeholder="Ej: Dior Sauvage"
                     />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">
-                      Proveedor
-                    </label>
-
+                    <label className="form-label">Proveedor</label>
                     <input
                       className="form-input"
                       value={perfumeForm.proveedor}
-                      onChange={e =>
-                        sp('proveedor', e.target.value)
-                      }
+                      onChange={e => sp('proveedor', e.target.value)}
                       placeholder="Nombre del proveedor"
                     />
                   </div>
 
                   <div className="form-grid-2">
                     <div className="form-group">
-                      <label className="form-label">
-                        Costo de proveedor ($) *
-                      </label>
-
+                      <label className="form-label">Costo de proveedor ($) *</label>
                       <input
                         type="number"
+                        inputMode="decimal"
                         className="form-input"
-                        value={
-                          perfumeForm.precio_proveedor
-                        }
-                        onChange={e =>
-                          sp(
-                            'precio_proveedor',
-                            e.target.value
-                          )
-                        }
+                        value={perfumeForm.precio_proveedor}
+                        onChange={e => sp('precio_proveedor', e.target.value)}
                       />
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label">
-                        Precio venta al público ($)
-                      </label>
-
+                      <label className="form-label">Precio venta al público ($)</label>
                       <input
                         type="number"
+                        inputMode="decimal"
                         className="form-input"
-                        value={
-                          perfumeForm.precio_publico
-                        }
-                        onChange={e =>
-                          sp(
-                            'precio_publico',
-                            e.target.value
-                          )
-                        }
+                        value={perfumeForm.precio_publico}
+                        onChange={e => sp('precio_publico', e.target.value)}
                       />
                     </div>
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">
-                      Piezas compradas
-                    </label>
-
+                    <label className="form-label">Piezas compradas</label>
                     <input
                       type="number"
+                      inputMode="numeric"
                       min={1}
                       className="form-input"
-                      value={
-                        perfumeForm.piezas_compradas
-                      }
-                      onChange={e =>
-                        setPiezas(e.target.value)
-                      }
+                      value={perfumeForm.piezas_compradas}
+                      onChange={e => setPiezas(e.target.value)}
                     />
                   </div>
 
                   <div
                     style={{
-                      border:
-                        '1px solid var(--noir-border)',
+                      border: '1px solid var(--noir-border)',
                       borderRadius: 6,
                       padding: 14,
                       marginBottom: 14,
                     }}
                   >
-                    <div
-                      className="label"
-                      style={{
-                        marginBottom: 10,
-                      }}
-                    >
+                    <div className="label" style={{ marginBottom: 10 }}>
                       ENVÍO DEL LOTE (opcional)
                     </div>
 
                     <div className="form-grid-2">
-                      <div
-                        className="form-group"
-                        style={{
-                          marginBottom: 0,
-                        }}
-                      >
-                        <label className="form-label">
-                          ¿Cuánto costó el envío? ($)
-                        </label>
-
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">¿Cuánto costó el envío? ($)</label>
                         <input
                           type="number"
+                          inputMode="decimal"
                           className="form-input"
-                          value={
-                            perfumeForm.costo_envio
-                          }
-                          onChange={e =>
-                            sp(
-                              'costo_envio',
-                              e.target.value
-                            )
-                          }
+                          value={perfumeForm.costo_envio}
+                          onChange={e => sp('costo_envio', e.target.value)}
                           placeholder="0 si no hubo envío"
                         />
                       </div>
 
-                      <div
-                        className="form-group"
-                        style={{
-                          marginBottom: 0,
-                        }}
-                      >
+                      <div className="form-group" style={{ marginBottom: 0 }}>
                         <label className="form-label">
                           ¿Entre cuántas piezas se reparte?
                         </label>
-
                         <input
                           type="number"
+                          inputMode="numeric"
                           min={1}
                           className="form-input"
-                          value={
-                            perfumeForm.piezas_envio
-                          }
-                          onChange={e =>
-                            sp(
-                              'piezas_envio',
-                              e.target.value
-                            )
-                          }
+                          value={perfumeForm.piezas_envio}
+                          onChange={e => sp('piezas_envio', e.target.value)}
                         />
                       </div>
                     </div>
@@ -1608,261 +1149,142 @@ export default function Perfumes() {
                         marginTop: 10,
                       }}
                     >
-                      Ej: compraste 4 perfumes y el envío fue
-                      $240 → pon envío 240 y reparte en 4 →{' '}
-                      {fmt(240 / 4)}/pieza. Si no cobraron
-                      envío, deja en 0.
+                      Ej: compraste 4 perfumes y el envío fue $240 → pon envío 240
+                      y reparte en 4 → {fmt(240 / 4)}/pieza. Si no cobraron envío,
+                      deja en 0.
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      fontSize: '0.82rem',
-                      color: 'var(--cream-dim)',
-                      marginBottom: 12,
-                      lineHeight: 1.7,
-                    }}
-                  >
-                    Envío por pieza:{' '}
-                    <strong
-                      style={{
-                        color: 'var(--cream)',
-                      }}
-                    >
-                      {fmt(envioU())}
-                    </strong>
+                  <div className="calc-box">
+                    <div className="calc-chip">
+                      <span>Envío por pieza</span>
+                      <strong style={{ color: 'var(--cream)' }}>{fmt(envioU())}</strong>
+                    </div>
 
-                    <br />
+                    <div className="calc-chip">
+                      <span>Costo unitario real</span>
+                      <strong style={{ color: 'var(--cream)' }}>{fmt(costoU())}</strong>
+                    </div>
 
-                    Costo unitario real:{' '}
-                    <strong
-                      style={{
-                        color: 'var(--cream)',
-                      }}
-                    >
-                      {fmt(costoU())}
-                    </strong>
+                    <div className="calc-chip">
+                      <span>Ganancia unitaria</span>
+                      <strong
+                        style={{ color: gananciaU() >= 0 ? '#4a8c6a' : '#c45c5c' }}
+                      >
+                        {fmt(gananciaU())}
+                      </strong>
+                    </div>
 
-                    <br />
-
-                    Ganancia unitaria:{' '}
-                    <strong
-                      style={{
-                        color:
-                          gananciaU() >= 0
-                            ? '#4a8c6a'
-                            : '#c45c5c',
-                      }}
-                    >
-                      {fmt(gananciaU())}
-                    </strong>
-
-                    {' · '}Si vendes todo:{' '}
-
-                    <strong
-                      style={{
-                        color: 'var(--gold)',
-                      }}
-                    >
-                      {fmt(
-                        gananciaU() *
-                          (parseInt(
-                            perfumeForm.piezas_compradas,
-                            10
-                          ) || 0)
-                      )}
-                    </strong>
+                    <div className="calc-chip">
+                      <span>Si vendes todo</span>
+                      <strong style={{ color: 'var(--gold)' }}>
+                        {fmt(
+                          gananciaU() *
+                            (parseInt(perfumeForm.piezas_compradas, 10) || 0)
+                        )}
+                      </strong>
+                    </div>
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">
-                      Notas
-                    </label>
-
+                    <label className="form-label">Notas</label>
                     <textarea
                       className="form-input"
                       value={perfumeForm.notas}
-                      onChange={e =>
-                        sp('notas', e.target.value)
-                      }
+                      onChange={e => sp('notas', e.target.value)}
                     />
                   </div>
                 </>
               )}
 
+              {/* ── Formulario de venta ── */}
               {modal === 'venta' && (
                 <>
                   <div className="form-group">
-                    <label className="form-label">
-                      Perfume *
-                    </label>
+                    <label className="form-label">Perfume *</label>
 
                     <select
                       className="form-input"
                       value={ventaForm.perfume_id}
                       onChange={e => {
                         const id = e.target.value
-
                         sv('perfume_id', id)
 
-                        const p = perfumes.find(
-                          x =>
-                            x.id ===
-                            parseInt(id, 10)
-                        )
-
-                        if (p) {
-                          sv(
-                            'precio_unitario',
-                            p.precio_publico
-                          )
-                        }
+                        const p = perfumes.find(x => x.id === parseInt(id, 10))
+                        if (p) sv('precio_unitario', p.precio_publico)
                       }}
                     >
-                      <option value="">
-                        Seleccionar...
-                      </option>
+                      <option value="">Seleccionar...</option>
 
                       {perfumes
                         .filter(p => p.stock > 0)
                         .map(p => (
-                          <option
-                            key={p.id}
-                            value={p.id}
-                          >
-                            {p.nombre} · stock {p.stock} ·
-                            público {fmt(p.precio_publico)}
+                          <option key={p.id} value={p.id}>
+                            {p.nombre} · stock {p.stock} · público{' '}
+                            {fmt(p.precio_publico)}
                           </option>
                         ))}
                     </select>
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">
-                      Cliente
-                    </label>
-
+                    <label className="form-label">Cliente</label>
                     <input
                       className="form-input"
                       value={ventaForm.cliente}
-                      onChange={e =>
-                        sv('cliente', e.target.value)
-                      }
+                      onChange={e => sv('cliente', e.target.value)}
                       placeholder="¿A quién se lo vendimos?"
                     />
                   </div>
 
                   <div className="form-grid-2">
                     <div className="form-group">
-                      <label className="form-label">
-                        Cantidad
-                      </label>
-
+                      <label className="form-label">Cantidad</label>
                       <input
                         type="number"
+                        inputMode="numeric"
                         min={1}
                         className="form-input"
                         value={ventaForm.cantidad}
-                        onChange={e =>
-                          sv(
-                            'cantidad',
-                            e.target.value
-                          )
-                        }
+                        onChange={e => sv('cantidad', e.target.value)}
                       />
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label">
-                        Precio unitario venta ($)
-                      </label>
-
+                      <label className="form-label">Precio unitario venta ($)</label>
                       <input
                         type="number"
+                        inputMode="decimal"
                         className="form-input"
-                        value={
-                          ventaForm.precio_unitario
-                        }
-                        onChange={e =>
-                          sv(
-                            'precio_unitario',
-                            e.target.value
-                          )
-                        }
+                        value={ventaForm.precio_unitario}
+                        onChange={e => sv('precio_unitario', e.target.value)}
                       />
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      color: 'var(--gold)',
-                      marginBottom: 12,
-                    }}
-                  >
-                    Total:{' '}
-                    <strong>
-                      {fmt(totalVenta())}
-                    </strong>
+                  <div style={{ color: 'var(--gold)', marginBottom: 12 }}>
+                    Total: <strong>{fmt(totalVenta())}</strong>
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">
-                      Forma de pago
-                    </label>
+                    <label className="form-label">Forma de pago</label>
 
-                    <div
-                      style={{
-                        display: 'flex',
-                        gap: 16,
-                      }}
-                    >
-                      <label
-                        style={{
-                          display: 'flex',
-                          gap: 6,
-                          alignItems: 'center',
-                          cursor: 'pointer',
-                        }}
-                      >
+                    <div className="pay-options">
+                      <label className="pay-option">
                         <input
                           type="radio"
-                          checked={
-                            ventaForm.tipo_pago ===
-                            'contado'
-                          }
-                          onChange={() =>
-                            sv(
-                              'tipo_pago',
-                              'contado'
-                            )
-                          }
+                          checked={ventaForm.tipo_pago === 'contado'}
+                          onChange={() => sv('tipo_pago', 'contado')}
                         />
-
                         Un solo pago
                       </label>
 
-                      <label
-                        style={{
-                          display: 'flex',
-                          gap: 6,
-                          alignItems: 'center',
-                          cursor: 'pointer',
-                        }}
-                      >
+                      <label className="pay-option">
                         <input
                           type="radio"
-                          checked={
-                            ventaForm.tipo_pago ===
-                            'abonos'
-                          }
-                          onChange={() =>
-                            sv(
-                              'tipo_pago',
-                              'abonos'
-                            )
-                          }
+                          checked={ventaForm.tipo_pago === 'abonos'}
+                          onChange={() => sv('tipo_pago', 'abonos')}
                         />
-
                         Varios pagos / abonos
                       </label>
                     </div>
@@ -1870,20 +1292,14 @@ export default function Perfumes() {
 
                   {ventaForm.tipo_pago === 'abonos' && (
                     <div className="form-group">
-                      <label className="form-label">
-                        Abono inicial ($)
-                      </label>
+                      <label className="form-label">Abono inicial ($)</label>
 
                       <input
                         type="number"
+                        inputMode="decimal"
                         className="form-input"
                         value={ventaForm.abonado}
-                        onChange={e =>
-                          sv(
-                            'abonado',
-                            e.target.value
-                          )
-                        }
+                        onChange={e => sv('abonado', e.target.value)}
                         placeholder="0 si no deja nada hoy"
                       />
 
@@ -1894,129 +1310,97 @@ export default function Perfumes() {
                           marginTop: 4,
                         }}
                       >
-                        Abono inicial:{' '}
-                        {fmt(
-                          Number(ventaForm.abonado) || 0
-                        )}
+                        Abono inicial: {fmt(Number(ventaForm.abonado) || 0)}
                       </div>
                     </div>
                   )}
 
                   <div className="form-group">
-                    <label className="form-label">
-                      Fecha
-                    </label>
-
+                    <label className="form-label">Fecha</label>
                     <input
                       type="date"
                       className="form-input"
                       value={ventaForm.fecha}
-                      onChange={e =>
-                        sv('fecha', e.target.value)
-                      }
+                      onChange={e => sv('fecha', e.target.value)}
                     />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">
-                      Notas
-                    </label>
-
+                    <label className="form-label">Notas</label>
                     <textarea
                       className="form-input"
                       value={ventaForm.notas}
-                      onChange={e =>
-                        sv('notas', e.target.value)
-                      }
+                      onChange={e => sv('notas', e.target.value)}
                     />
                   </div>
                 </>
               )}
 
+              {/* ── Formulario de abono ── */}
               {modal === 'abono' && ventaAbono && (
                 <>
-                  <div
-                    style={{
-                      fontSize: '0.85rem',
-                      color: 'var(--cream-dim)',
-                      marginBottom: 14,
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    Cliente:{' '}
+                  <div className="calc-box" style={{ marginBottom: 16 }}>
+                    <div className="calc-chip" style={{ gridColumn: '1 / -1' }}>
+                      <span>Cliente</span>
+                      <strong style={{ color: 'var(--cream)' }}>
+                        {ventaAbono.cliente || '—'}
+                      </strong>
+                    </div>
 
-                    <strong
-                      style={{
-                        color: 'var(--cream)',
-                      }}
-                    >
-                      {ventaAbono.cliente || '—'}
-                    </strong>
+                    <div className="calc-chip">
+                      <span>Total</span>
+                      <strong style={{ color: 'var(--cream)' }}>
+                        {fmt(ventaAbono.total_venta)}
+                      </strong>
+                    </div>
 
-                    <br />
+                    <div className="calc-chip">
+                      <span>Abonado</span>
+                      <strong style={{ color: '#4a8c6a' }}>
+                        {fmt(ventaAbono.abonado)}
+                      </strong>
+                    </div>
 
-                    Total {fmt(ventaAbono.total_venta)}{' '}
-                    · Abonado {fmt(ventaAbono.abonado)}{' '}
-                    ·{' '}
-
-                    <span
-                      style={{
-                        color: 'var(--gold)',
-                      }}
-                    >
-                      Resta {fmt(ventaAbono.resto)}
-                    </span>
+                    <div className="calc-chip">
+                      <span>Resta</span>
+                      <strong style={{ color: 'var(--gold)' }}>
+                        {fmt(ventaAbono.resto)}
+                      </strong>
+                    </div>
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">
-                      Monto del abono ($)
-                    </label>
-
+                    <label className="form-label">Monto del abono ($)</label>
                     <input
                       type="number"
+                      inputMode="decimal"
                       className="form-input"
                       value={abonoForm.monto}
                       onChange={e =>
-                        setAbonoForm(f => ({
-                          ...f,
-                          monto: e.target.value,
-                        }))
+                        setAbonoForm(f => ({ ...f, monto: e.target.value }))
                       }
                     />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">
-                      Fecha
-                    </label>
-
+                    <label className="form-label">Fecha</label>
                     <input
                       type="date"
                       className="form-input"
                       value={abonoForm.fecha}
                       onChange={e =>
-                        setAbonoForm(f => ({
-                          ...f,
-                          fecha: e.target.value,
-                        }))
+                        setAbonoForm(f => ({ ...f, fecha: e.target.value }))
                       }
                     />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">
-                      Notas
-                    </label>
-
+                    <label className="form-label">Notas</label>
                     <input
                       className="form-input"
                       value={abonoForm.notas}
                       onChange={e =>
-                        setAbonoForm(f => ({
-                          ...f,
-                          notas: e.target.value,
-                        }))
+                        setAbonoForm(f => ({ ...f, notas: e.target.value }))
                       }
                     />
                   </div>
@@ -2025,39 +1409,20 @@ export default function Perfumes() {
             </div>
 
             <div className="modal-footer">
-              <button
-                className="btn btn-outline"
-                onClick={() => {
-                  setModal(null)
-                  setEditId(null)
-                  setEditAbonoId(null)
-                }}
-              >
-                {modal === 'historial' || modal === 'historialAbonos'
-                  ? 'Cerrar'
-                  : 'Cancelar'}
+              <button className="btn btn-outline" onClick={cerrarModal}>
+                {esHistorial ? 'Cerrar' : 'Cancelar'}
               </button>
 
-              {modal !== 'historial' && modal !== 'historialAbonos' && (
+              {!esHistorial && (
                 <button
                   className="btn btn-gold"
                   onClick={() => {
-                    if (modal === 'perfume') {
-                      submitPerfume()
-                    }
-
-                    if (modal === 'venta') {
-                      submitVenta()
-                    }
-
-                    if (modal === 'abono') {
-                      submitAbono()
-                    }
+                    if (modal === 'perfume') submitPerfume()
+                    if (modal === 'venta') submitVenta()
+                    if (modal === 'abono') submitAbono()
                   }}
                 >
-                  {editId || editAbonoId
-                    ? 'Guardar cambios'
-                    : 'Guardar'}
+                  {editId || editAbonoId ? 'Guardar cambios' : 'Guardar'}
                 </button>
               )}
             </div>
@@ -2071,18 +1436,11 @@ export default function Perfumes() {
 function Kpi({ label, value, color }) {
   return (
     <div className="stat-card">
-      <div className="label">
-        {label}
-      </div>
+      <div className="label">{label}</div>
 
       <div
         className="stat-value"
-        style={{
-          color:
-            color ||
-            'var(--cream)',
-          fontSize: '1.15rem',
-        }}
+        style={{ color: color || 'var(--cream)', fontSize: '1.15rem' }}
       >
         {value}
       </div>
