@@ -503,7 +503,6 @@ export default function Perfumes() {
                     <td data-label="Fecha">{fmtDate(v.fecha)}</td>
                     <td className="cell-title" data-label="Cliente">
                       <span>{v.cliente || '—'}</span>
-                      <span className="badge badge-gold cell-title-badge">{v.pct_pagado}% pagado</span>
                     </td>
                     <td className="cell-full" data-label="Perfume">{v.perfume_nombre}</td>
                     <td data-label="Cant.">{v.cantidad}</td>
