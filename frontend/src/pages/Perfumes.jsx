@@ -10,6 +10,7 @@ import {
   Clock,
   Archive,
   Filter,
+  PackageX
 } from 'lucide-react'
 import { api, fmt, fmtDate } from '../api'
 
@@ -267,17 +268,22 @@ export default function Perfumes() {
   }
 
   const totalPorCobrarGlobal = ventasPendientes.reduce((acc, v) => acc + (v.resto || 0), 0)
-  const totalPaginasPerfumes = Math.max(1, Math.ceil(perfumes.length / PERFUMES_POR_PAGINA))
+
+  // ── FILTRADO Y PAGINACIÓN (SOLO EN STOCK) ──
+  const perfumesEnStock = perfumes.filter(p => p.stock > 0)
+  const perfumesAgotados = perfumes.filter(p => p.stock <= 0)
+
+  const totalPaginasPerfumes = Math.max(1, Math.ceil(perfumesEnStock.length / PERFUMES_POR_PAGINA))
   const paginaPerfumesActual = Math.min(paginaPerfumes, totalPaginasPerfumes)
   const inicioPerfumes = (paginaPerfumesActual - 1) * PERFUMES_POR_PAGINA
-  const perfumesPaginados = perfumes.slice(inicioPerfumes, inicioPerfumes + PERFUMES_POR_PAGINA)
+  const perfumesPaginados = perfumesEnStock.slice(inicioPerfumes, inicioPerfumes + PERFUMES_POR_PAGINA)
 
   const totalAbonosHistoricos = ventasLiquidadasConAbonos.reduce(
     (s, v) => s + v.abonos.reduce((s2, a) => s2 + Number(a.monto), 0),
     0
   )
 
-  const esHistorial = modal === 'historial' || modal === 'historialAbonos'
+  const esHistorial = modal === 'historial' || modal === 'historialAbonos' || modal === 'agotados'
 
   return (
     <div className="perfumes-page">
@@ -381,14 +387,24 @@ export default function Perfumes() {
         </div>
       )}
 
-      {/* ───────── INVENTARIO ───────── */}
+      {/* ───────── INVENTARIO (SOLO EN STOCK) ───────── */}
       <div className="card">
-        <div className="section-title mb-4">Inventario</div>
+        <div className="section-title-row">
+          <span className="section-title">Inventario en Stock</span>
+          
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => setModal('agotados')}
+            style={{ borderColor: 'var(--gold)' }}
+          >
+            <PackageX size={14} /> Ver agotados ({perfumesAgotados.length})
+          </button>
+        </div>
 
-        {perfumes.length === 0 ? (
+        {perfumesEnStock.length === 0 ? (
           <div className="empty-state">
             <Package size={28} style={{ opacity: 0.4, marginBottom: 8 }} />
-            <p>Sin perfumes. Registra el primero.</p>
+            <p>No hay perfumes con stock disponible. Revisa los agotados.</p>
           </div>
         ) : (
           <div className="table-wrap table-stack-wrap">
@@ -446,7 +462,7 @@ export default function Perfumes() {
               </tbody>
             </table>
 
-            {perfumes.length > PERFUMES_POR_PAGINA && (
+            {perfumesEnStock.length > PERFUMES_POR_PAGINA && (
               <div className="pager">
                 <button
                   className="btn btn-outline"
@@ -611,6 +627,7 @@ export default function Perfumes() {
                 {modal === 'abono' && (editAbonoId ? 'Editar abono' : 'Registrar abono')}
                 {modal === 'historial' && 'Historial de ventas liquidadas'}
                 {modal === 'historialAbonos' && 'Histórico de abonos finalizados'}
+                {modal === 'agotados' && 'Historial de Perfumes Agotados'}
               </span>
               <button className="btn-icon" onClick={cerrarModal} aria-label="Cerrar">
                 <X size={16} />
@@ -620,6 +637,58 @@ export default function Perfumes() {
             <div className="modal-body">
               {error && (
                 <div style={{ color: '#c45c5c', fontSize: '0.8rem', marginBottom: 12 }}>{error}</div>
+              )}
+
+              {/* ── Historial de Perfumes Agotados ── */}
+              {modal === 'agotados' && (
+                <>
+                  <div className="table-wrap table-stack-wrap" style={{ maxHeight: 450, overflowY: 'auto' }}>
+                    <table className="data-table stack-table">
+                      <thead>
+                        <tr>
+                          <th>Perfume</th>
+                          <th>Proveedor</th>
+                          <th>Costo Prov.</th>
+                          <th>P. Público</th>
+                          <th>Cant. Total</th>
+                          <th>Vendidos</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {perfumesAgotados.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="cell-full" style={{ textAlign: 'center', color: 'var(--cream-dim)' }}>
+                              No hay perfumes agotados todavía.
+                            </td>
+                          </tr>
+                        ) : (
+                          perfumesAgotados.map(p => (
+                            <tr key={p.id}>
+                              <td className="cell-title" data-label="Perfume">{p.nombre}</td>
+                              <td data-label="Proveedor">{p.proveedor || '—'}</td>
+                              <td data-label="Costo Prov.">{fmt(p.precio_proveedor)}</td>
+                              <td className="td-gold" data-label="P. Público">{fmt(p.precio_publico)}</td>
+                              <td data-label="Cant. Total">{p.piezas_compradas}</td>
+                              <td className="td-green" data-label="Vendidos">{p.vendidos}</td>
+                              <td className="cell-actions">
+                                <button className="btn-icon" title="Editar" onClick={() => openEditPerfume(p)}>
+                                  <Pencil size={14} />
+                                </button>
+                                <button className="btn-icon" title="Eliminar" onClick={() => eliminar('perfumes', p.id)}>
+                                  <Trash2 size={14} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="totals-row" style={{ marginTop: 16 }}>
+                    <div>Perfumes agotados: <strong style={{ color: 'var(--cream)' }}>{perfumesAgotados.length}</strong></div>
+                  </div>
+                </>
               )}
 
               {/* ── Historial de ventas liquidadas ── */}
