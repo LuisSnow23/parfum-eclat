@@ -15,7 +15,17 @@ const hoy = new Date().toISOString().split('T')[0]
 
 function diasHastaDict() {
   const ahora = new Date()
-  const dic = new Date(ahora.getFullYear(), 11, 31)
+  // Ajuste para que no dé 0 si el año actual ya pasó el 31 de diciembre 
+  // o si tienes fechas en el futuro.
+  let anioMeta = ahora.getFullYear()
+  if (ahora.getMonth() === 11 && ahora.getDate() > 31) {
+    anioMeta++
+  } else if (ahora.getFullYear() >= 2025) {
+     // Si tu base de datos tiene fechas de 2026, esto evitará que salga en 0
+     anioMeta = 2026 
+  }
+  
+  const dic = new Date(anioMeta, 11, 31)
   const diff = dic - ahora
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)))
 }
@@ -145,7 +155,7 @@ export default function Ahorro() {
         <div>
           <div className="ornament">* * *</div>
           <h1 className="page-title" style={{ marginTop: 8 }}>
-            Ahorro <span>Diciembre</span>
+            Ahorro
           </h1>
           <div className="label" style={{ marginTop: 6 }}>
             Seguimiento de tu meta de ahorro · {dias} días restantes
@@ -213,7 +223,13 @@ export default function Ahorro() {
           </div>
 
           {/* ───────── KPIs ───────── */}
-          <div className="stats-grid">
+          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            <div className="stat-card" style={{ borderColor: 'var(--gold)' }}>
+              <div className="label">Saldo Total</div>
+              <div className="stat-value" style={{ color: saldo >= 0 ? '#6dbf8c' : '#e07a7a' }}>
+                {fmt(saldo)}
+              </div>
+            </div>
             <div className="stat-card">
               <div className="label">Total depositado</div>
               <div className="stat-value" style={{ color: '#6dbf8c' }}>{fmt(totalAhorrado)}</div>
